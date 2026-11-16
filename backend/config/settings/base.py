@@ -49,6 +49,8 @@ INSTALLED_APPS = [
 AUTH_USER_MODEL = "cuentas.Usuario"
 
 MIDDLEWARE = [
+    # Primero, para que las cabeceras de seguridad cubran todas las respuestas.
+    "apps.core.middleware.CabecerasSeguridadMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -99,6 +101,13 @@ USE_I18N = True
 USE_TZ = True
 
 X_FRAME_OPTIONS = "DENY"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+
+# Hashes SHA-256 de los scripts y estilos en línea del build de Astro. Los
+# genera frontend/scripts/hash-csp.mjs y el middleware los lee al arrancar.
+CSP_ARCHIVO_HASHES = BASE_DIR.parent / "frontend" / "csp-hashes.json"
 
 # La API responde solo JSON y niega el acceso por omisión: cada vista debe
 # declarar sus permisos. La autenticación por cookies se agrega en la Fase 1.
