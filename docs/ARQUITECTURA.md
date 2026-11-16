@@ -411,7 +411,15 @@ Prefijo `/api/`. JSON con nombres en `snake_case`. Errores con forma `{"codigo":
 
 ### 12.1 Configuración y secretos
 - Configuración por variables de entorno leídas en `settings/base.py` con una función propia que falla si falta una variable obligatoria en producción. En `settings` solo quedan valores no sensibles. El archivo local es `backend/.env` y está en `.gitignore`; `backend/.env.example` lista los nombres sin valores reales. Deja un comando (`python manage.py generar_llaves`) que imprima en la terminal valores aleatorios seguros para `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY` y `MFA_ENCRYPTION_KEY`, sin escribirlos en ningún archivo.
-- Variables: `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY`, `MFA_ENCRYPTION_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSLMODE`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DOMINIO_INSTITUCIONAL`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `VOCES_DISPONIBLES`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_CONTAINER`, `PROVEEDOR_VOZ` (`azure` o `prueba`).
+- Variables de la aplicación: `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY`, `MFA_ENCRYPTION_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSLMODE`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DOMINIO_INSTITUCIONAL`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `VOCES_DISPONIBLES`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_CONTAINER`, `PROVEEDOR_VOZ` (`azure` o `prueba`).
+- **Obligatorias en producción** (si falta alguna o viene vacía, el arranque se detiene con un error que nombra la variable, nunca su valor): `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY`, `MFA_ENCRYPTION_KEY`, `ALLOWED_HOSTS`, `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `AZURE_STORAGE_ACCOUNT_NAME` y `AZURE_STORAGE_CONTAINER`. `AZURE_SPEECH_KEY` y `AZURE_SPEECH_REGION` son obligatorias solo cuando `PROVEEDOR_VOZ` es `azure`. Las demás son opcionales y tienen un valor por omisión no sensible (`DB_PORT` 5432, `DOMINIO_INSTITUCIONAL` `aulaconecta.cl`, `PROVEEDOR_VOZ` `prueba`, `VOCES_DISPONIBLES` con las dos voces es-CL, `CSRF_TRUSTED_ORIGINS` vacía).
+- Además, en producción las tres llaves deben ser distintas entre sí, `DJANGO_SECRET_KEY` y `JWT_SIGNING_KEY` deben tener al menos 50 caracteres, `MFA_ENCRYPTION_KEY` debe tener formato Fernet y `DB_SSLMODE` solo admite `require` (valor por omisión), `verify-ca` o `verify-full`.
+- Se considera producción toda configuración que no sea `config.settings.dev` ni `config.settings.test`. Solo en esas dos se carga `backend/.env` y se aceptan valores por omisión; si falta una llave, se genera una temporal que dura lo que el proceso.
+- Variables solo para el entorno local, que no existen en producción:
+  - `DB_OWNER_PASSWORD`: contraseña del rol `notia_owner`. La usan `backend/db/roles.sql` al crear el rol y Django cuando se migra con `DB_ROL=owner`. Debe ser distinta de `DB_PASSWORD`.
+  - `POSTGRES_PASSWORD`: contraseña del superusuario `postgres` del contenedor de desarrollo. Django no la lee.
+  - `DB_ROL` (`app` u `owner`; por omisión `app`): solo la lee `config.settings.dev`. Con `owner`, la conexión usa `notia_owner` y `DB_OWNER_PASSWORD`, para ejecutar las migraciones (`$env:DB_ROL = 'owner'; python manage.py migrate`). No va en `backend/.env`: se define en la terminal para ese comando. En producción las migraciones reciben las credenciales de `notia_owner` directamente en `DB_USER` y `DB_PASSWORD`.
+- El contenedor local de PostgreSQL se levanta con `docker compose --env-file backend/.env up -d` y recibe por interpolación solo `POSTGRES_PASSWORD`, `DB_OWNER_PASSWORD`, `DB_PASSWORD`, `DB_NAME` y `DB_PORT`; las llaves de Django no entran al contenedor.
 - En Azure, los secretos viven en Key Vault y App Service los lee mediante referencias de Key Vault con identidad administrada. Blob Storage se accede con identidad administrada (`DefaultAzureCredential`), sin cadenas de conexión.
 - `python manage.py check --deploy --settings=config.settings.prod` debe terminar sin advertencias.
 
@@ -447,7 +455,7 @@ Prefijo `/api/`. JSON con nombres en `snake_case`. Errores con forma `{"codigo":
 
 ### 12.9 Base de datos con privilegios mínimos
 - `backend/db/roles.sql` crea dos roles: `notia_owner` (dueño del esquema; se usa solo para migraciones) y `notia_app` (el que usa la aplicación: SELECT, INSERT, UPDATE y DELETE en las tablas de la app; **solo** SELECT e INSERT en `auditoria_registroauditoria`; EXECUTE en `fn_calcular_resultado`; sin permisos para crear objetos).
-- `docker-compose.yml` ejecuta este script al crear la base local. En producción, la conexión exige TLS (`sslmode=require`).
+- `docker-compose.yml` ejecuta este script al crear la base local; las contraseñas de los roles llegan por variables de entorno (`DB_OWNER_PASSWORD` y `DB_PASSWORD`), nunca escritas en el script. En producción, la conexión exige TLS (`sslmode=require`).
 - Un comando `python manage.py purgar_bitacora --antes-de AAAA-MM-DD` borra registros antiguos de la bitácora y solo funciona con las credenciales de `notia_owner` (lo ejecuta una persona, no un job).
 
 ---
