@@ -1,0 +1,32 @@
+# NotIA · PostgreSQL para desarrollo local. No se usa en producción.
+#
+#   docker compose up -d        levanta la base
+#   docker compose down         la detiene (los datos quedan en el volumen)
+#   docker compose down -v      la detiene y BORRA los datos locales
+#
+# Las contraseñas no están aquí: el contenedor las lee de backend/.env
+# (POSTGRES_PASSWORD, DB_OWNER_PASSWORD y DB_PASSWORD), que está en .gitignore.
+name: notia
+
+services:
+  db:
+    image: postgres:17.12-alpine
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    ports:
+      # Solo accesible desde este computador.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - notia_pgdata:/var/lib/postgresql/data
+      # Se ejecuta una sola vez, al crear el volumen: crea la base y los roles
+      # notia_owner y notia_app con privilegios mínimos.
+      - ./backend/db/roles.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=postgres --dbname=postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  notia_pgdata:

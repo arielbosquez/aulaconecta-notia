@@ -1,0 +1,4 @@
+# Estos archivos se ejecutan dentro de contenedores Linux: siempre con fin de
+# línea LF, aunque Git en Windows convierta el resto a CRLF.
+*.sql text eol=lf
+*.sh text eol=lf
