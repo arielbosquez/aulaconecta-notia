@@ -28,6 +28,28 @@ Docente: Mario Yáñez Urrutia.
 
 En planificación.
 
+## Base de datos local
+
+PostgreSQL corre en Docker solo para desarrollo. Las contraseñas están en `backend/.env` (copia de `backend/.env.example`, nunca se sube al repositorio), por eso todos los comandos llevan `--env-file`. Desde la raíz del repositorio:
+
+```powershell
+# Levantar la base (la primera vez crea los roles notia_owner y notia_app)
+docker compose --env-file backend/.env up -d
+
+# Ver sus registros o detenerla
+docker compose --env-file backend/.env logs db
+docker compose --env-file backend/.env down
+```
+
+Antes de levantarla, completa en `backend/.env` las variables `POSTGRES_PASSWORD`, `DB_OWNER_PASSWORD` y `DB_PASSWORD` (las dos últimas distintas entre sí). El contenedor recibe solo esas contraseñas, el nombre de la base (`DB_NAME`) y el puerto (`DB_PORT`); las llaves de Django no entran al contenedor.
+
+Las migraciones se ejecutan con el rol dueño del esquema y la aplicación con el rol de privilegios mínimos (desde `backend/`):
+
+```powershell
+$env:DB_ROL = 'owner'; python manage.py migrate; Remove-Item Env:DB_ROL
+python manage.py runserver
+```
+
 ## Flujo de trabajo
 
 1. Nadie trabaja directamente en `main`; la rama está protegida.

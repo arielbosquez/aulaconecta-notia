@@ -1,22 +1,32 @@
 # NotIA · PostgreSQL para desarrollo local. No se usa en producción.
 #
-#   docker compose up -d        levanta la base
-#   docker compose down         la detiene (los datos quedan en el volumen)
-#   docker compose down -v      la detiene y BORRA los datos locales
+# Todos los comandos llevan --env-file backend/.env, porque de ahí salen las
+# contraseñas (el archivo está en .gitignore):
 #
-# Las contraseñas no están aquí: el contenedor las lee de backend/.env
-# (POSTGRES_PASSWORD, DB_OWNER_PASSWORD y DB_PASSWORD), que está en .gitignore.
+#   docker compose --env-file backend/.env up -d       levanta la base
+#   docker compose --env-file backend/.env logs db     muestra sus registros
+#   docker compose --env-file backend/.env down        la detiene (los datos quedan en el volumen)
+#   docker compose --env-file backend/.env down -v     la detiene y BORRA los datos locales
+#
+# El contenedor recibe solo las variables que aparecen en "environment". Las
+# llaves de Django (DJANGO_SECRET_KEY, JWT_SIGNING_KEY, MFA_ENCRYPTION_KEY) y
+# el resto de backend/.env no entran al contenedor.
 name: notia
 
 services:
   db:
     image: postgres:17.12-alpine
     restart: unless-stopped
-    env_file:
-      - backend/.env
+    environment:
+      # Superusuario del contenedor: solo crea la base y los roles.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD. Usa docker compose --env-file backend/.env up -d}
+      # Las lee backend/db/roles.sql al crear la base.
+      DB_NAME: ${DB_NAME:-notia}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:?Falta DB_OWNER_PASSWORD en backend/.env}
+      DB_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en backend/.env}
     ports:
       # Solo accesible desde este computador.
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - notia_pgdata:/var/lib/postgresql/data
       # Se ejecuta una sola vez, al crear el volumen: crea la base y los roles

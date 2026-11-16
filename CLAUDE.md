@@ -58,8 +58,9 @@ aulaconecta-notia/
 Estos comandos son los previstos; actualízalos aquí si cambian al implementar la Fase 0.
 
 ```powershell
-# Base de datos local (lee las contraseñas de backend/.env; crea los roles con backend/db/roles.sql)
-docker compose up -d
+# Base de datos local. --env-file es obligatorio: de backend/.env salen las contraseñas.
+# El contenedor recibe solo las suyas (no las llaves de Django) y crea los roles con backend/db/roles.sql.
+docker compose --env-file backend/.env up -d
 
 # Backend (desde backend/)
 python -m venv .venv
