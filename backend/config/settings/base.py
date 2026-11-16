@@ -116,6 +116,40 @@ REST_FRAMEWORK = {
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
+    "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",
+}
+
+# El rechazo por CSRF también responde JSON genérico.
+CSRF_FAILURE_VIEW = "apps.core.errores.error_csrf"
+
+# Registros en JSON por la salida estándar (los recoge App Service). Todo pasa
+# por el filtro que enmascara contraseñas, tokens, cookies y respuestas.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "datos_sensibles": {"()": "apps.core.registros.FiltroDatosSensibles"},
+    },
+    "formatters": {
+        "json": {"()": "apps.core.registros.FormateadorJson"},
+    },
+    "handlers": {
+        "consola": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": "json",
+            "filters": ["datos_sensibles"],
+        },
+    },
+    "root": {"handlers": ["consola"], "level": "INFO"},
+    "loggers": {
+        # Los registros de Django usan el mismo formato y el mismo filtro.
+        "django": {"handlers": [], "level": "INFO", "propagate": True},
+        "django.server": {"handlers": [], "level": "INFO", "propagate": True},
+        # Nunca se registran las consultas SQL: llevan datos de las personas.
+        "django.db.backends": {"level": "WARNING"},
+    },
 }
 
 # --- Cuentas ---
