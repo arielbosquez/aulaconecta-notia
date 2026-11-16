@@ -23,7 +23,19 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "rest_framework",
+    "apps.core",
+    "apps.cuentas",
+    "apps.academico",
+    "apps.evaluaciones",
+    "apps.voz",
+    "apps.rendicion",
+    "apps.resultados",
+    "apps.integridad",
+    "apps.auditoria",
 ]
+
+# Modelo de usuario propio, definido antes de la primera migración.
+AUTH_USER_MODEL = "cuentas.Usuario"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
