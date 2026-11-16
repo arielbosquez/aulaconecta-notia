@@ -1,0 +1,10 @@
+# Dependencias de desarrollo y pruebas. Después de editar este archivo:
+#   pip-compile --generate-hashes --allow-unsafe --output-file requirements/dev.txt requirements/dev.in
+-r base.in
+-c base.txt
+pytest
+pytest-django
+ruff
+bandit
+pip-audit
+pip-tools

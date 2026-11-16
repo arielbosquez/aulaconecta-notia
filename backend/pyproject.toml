@@ -1,0 +1,22 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+# E/W: estilo, F: errores, I: orden de imports, B: bugbear,
+# UP: sintaxis moderna, S: reglas de seguridad (bandit), DJ: Django.
+select = ["E", "W", "F", "I", "B", "UP", "S", "DJ"]
+
+[tool.ruff.lint.per-file-ignores]
+# En las pruebas se usa assert y se escriben contraseñas ficticias.
+"**/tests/**" = ["S101", "S105", "S106"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["apps", "tests"]
+addopts = "-ra --strict-markers"
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests"]
