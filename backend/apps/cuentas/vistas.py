@@ -19,11 +19,16 @@ from apps.core.csrf import exigir_csrf
 
 from .cookies import borrar_cookies_de_sesion, poner_cookies_de_sesion
 from .limites import LimiteDeLoginPorIp
-from .mfa import iniciar_enrolamiento
+from .mfa import confirmar_enrolamiento, iniciar_enrolamiento
 from .models import Usuario
-from .serializadores import SerializadorCambioPassword, SerializadorLogin
+from .serializadores import (
+    SerializadorCambioPassword,
+    SerializadorCodigoMfa,
+    SerializadorLogin,
+)
 from .servicios import Paso, cambiar_password, iniciar_sesion
 from .tokens import (
+    Alcance,
     alcance_vigente,
     datos_de_refresco_reutilizado,
     emitir_tokens,
@@ -286,6 +291,28 @@ class VistaEnrolarMfa(APIView):
 
     def post(self, request):
         return Response(iniciar_enrolamiento(request.user))
+
+
+class VistaConfirmarMfa(APIView):
+    """Termina la activación del 2FA con un código de la aplicación (RS-06).
+
+    Si el código sirve, se cierran todas las sesiones de la cuenta y este
+    navegador recibe una sesión completa: la persona ya demostró la
+    contraseña y el segundo factor.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        datos = SerializadorCodigoMfa(data=request.data)
+        datos.is_valid(raise_exception=True)
+        cuenta = confirmar_enrolamiento(
+            request.user, datos.validated_data["codigo"], peticion=request
+        )
+        respuesta = Response({"paso": Paso.LISTO.value, "debe_cambiar_password": False})
+        poner_cookies_de_sesion(respuesta, emitir_tokens(cuenta, Alcance.COMPLETA))
+        rotate_token(request._request)
+        return respuesta
 
 
 class VistaYo(APIView):
