@@ -175,7 +175,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     # Sesión por cookie, con CSRF exigido en los métodos que modifican datos.
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.cuentas.autenticacion.AutenticacionPorCookie"],
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    # Por omisión se exige una sesión completa: sin 2FA ni cambio de
+    # contraseña pendientes. Lo que una sesión restringida puede usar se
+    # declara vista por vista.
+    "DEFAULT_PERMISSION_CLASSES": ["apps.cuentas.permisos.SesionCompleta"],
     # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
     "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",
 }

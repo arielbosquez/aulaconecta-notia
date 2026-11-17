@@ -4,7 +4,7 @@ from django.conf import settings
 from django.db import transaction
 from django.middleware.csrf import get_token, rotate_token
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
@@ -17,7 +17,7 @@ from apps.core.csrf import exigir_csrf
 from .cookies import borrar_cookies_de_sesion, poner_cookies_de_sesion
 from .serializadores import SerializadorLogin
 from .servicios import Paso, iniciar_sesion
-from .tokens import emitir_tokens, usuario_del_token
+from .tokens import alcance_vigente, emitir_tokens, usuario_del_token
 
 
 class VistaCsrf(APIView):
@@ -53,7 +53,11 @@ class VistaLogin(APIView):
         respuesta = Response(cuerpo)
         if resultado.paso is Paso.LISTO:
             cuerpo["debe_cambiar_password"] = resultado.usuario.debe_cambiar_password
-            poner_cookies_de_sesion(respuesta, emitir_tokens(resultado.usuario))
+        if resultado.alcance is not None:
+            # Sesión completa para un alumno; restringida a enrolar el 2FA
+            # para un docente o administrador que aún no lo activa.
+            tokens = emitir_tokens(resultado.usuario, resultado.alcance)
+            poner_cookies_de_sesion(respuesta, tokens)
             # Token CSRF nuevo para la sesión que empieza.
             rotate_token(request._request)
         return respuesta
@@ -103,9 +107,13 @@ class VistaRefresh(APIView):
         usuario = usuario_del_token(refresco)
         if usuario is None:
             return None
+        # El par nuevo conserva el alcance: renovar nunca amplía una sesión.
+        alcance = alcance_vigente(usuario, refresco)
+        if alcance is None:
+            return None
 
         refresco.blacklist()
-        return emitir_tokens(usuario)
+        return emitir_tokens(usuario, alcance)
 
     @staticmethod
     def _sesion_terminada() -> Response:
@@ -119,6 +127,10 @@ class VistaRefresh(APIView):
 
 class VistaYo(APIView):
     """Datos mínimos de la sesión actual: nombre, rol y pendientes."""
+
+    # También responde a una sesión restringida: es como el navegador se
+    # entera de qué paso le falta.
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         usuario = request.user

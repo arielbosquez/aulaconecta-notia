@@ -11,7 +11,7 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from apps.auditoria.models import Accion, RegistroAuditoria
 from apps.cuentas.models import Usuario
-from apps.cuentas.tokens import CLAIM_VERSION, emitir_tokens
+from apps.cuentas.tokens import CLAIM_ALCANCE, CLAIM_VERSION, Alcance, emitir_tokens
 from config.sesion import nombres_de_cookies
 
 from .conftest import CLAVE, OTRA_CLAVE, Navegador
@@ -170,8 +170,10 @@ def test_los_tokens_llevan_la_version_de_sesion_y_la_duracion_correcta(navegador
     assert acceso[CLAIM_VERSION] == refresco[CLAIM_VERSION] == 1
     assert acceso["exp"] - acceso["iat"] == 5 * 60
     assert refresco["exp"] - refresco["iat"] == 8 * 60 * 60
-    # Nada personal dentro del token: solo identificador, versión y fechas.
-    assert set(acceso.payload) == {"token_type", "exp", "iat", "jti", "sub", CLAIM_VERSION}
+    # Nada personal dentro del token: solo identificador, versión, alcance y fechas.
+    assert acceso[CLAIM_ALCANCE] == refresco[CLAIM_ALCANCE] == "completa"
+    claims = {"token_type", "exp", "iat", "jti", "sub", CLAIM_VERSION, CLAIM_ALCANCE}
+    assert set(acceso.payload) == claims
 
 
 def test_los_nombres_de_las_cookies_llevan_prefijo_solo_en_produccion():
@@ -243,7 +245,7 @@ def test_el_token_de_refresco_no_sirve_como_token_de_acceso(navegador, alumno):
 
 
 def test_el_token_no_se_acepta_en_la_cabecera_authorization(alumno):
-    tokens = emitir_tokens(alumno)
+    tokens = emitir_tokens(alumno, Alcance.COMPLETA)
     sin_cookies = Navegador()
     respuesta = sin_cookies.get("/api/auth/yo", HTTP_AUTHORIZATION=f"Bearer {tokens.acceso}")
     assert respuesta.status_code == 401
@@ -390,6 +392,7 @@ def test_un_refresco_firmado_pero_no_emitido_por_el_servidor_no_sirve(navegador,
     suelto = RefreshToken()
     suelto["sub"] = str(alumno.pk)
     suelto[CLAIM_VERSION] = 1
+    suelto[CLAIM_ALCANCE] = "completa"
     navegador.cookies[REFRESCO] = str(suelto)
     assert navegador.enviar("/api/auth/refresh").status_code == 401
 

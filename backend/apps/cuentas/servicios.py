@@ -17,6 +17,7 @@ from apps.core.errores import ErrorApi
 
 from .managers import normalizar_correo
 from .models import Rol, Usuario
+from .tokens import Alcance, alcance_tras_la_contrasena
 
 
 class Paso(StrEnum):
@@ -31,6 +32,16 @@ class Paso(StrEnum):
 class ResultadoLogin:
     usuario: Usuario
     paso: Paso
+    # Alcance de la sesión que corresponde emitir; ``None`` si no corresponde ninguna.
+    alcance: Alcance | None
+
+
+# El paso que ve el navegador sale siempre del alcance, nunca al revés.
+_PASO_POR_ALCANCE = {
+    Alcance.COMPLETA: Paso.LISTO,
+    Alcance.ENROLAR_MFA: Paso.ENROLAR_MFA,
+    None: Paso.MFA,
+}
 
 
 def _credenciales_invalidas() -> ErrorApi:
@@ -53,18 +64,13 @@ def _sin_consentimiento() -> ErrorApi:
     )
 
 
-def _paso_siguiente(usuario: Usuario) -> Paso:
-    """Docentes y administradores nunca quedan listos solo con la contraseña."""
-    if not usuario.es_del_personal:
-        return Paso.LISTO
-    return Paso.MFA if usuario.mfa_habilitado else Paso.ENROLAR_MFA
-
-
 @transaction.atomic
 def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLogin:
     """Comprueba las credenciales y decide el paso siguiente.
 
-    No emite tokens: eso lo hace la vista según el paso que resulte.
+    No emite tokens: eso lo hace la vista con el alcance que resulte. Un
+    docente o administrador nunca sale de aquí con una sesión completa: o
+    queda restringido a enrolar su 2FA, o debe verificar el segundo factor.
     """
     usuario = Usuario.objects.filter(correo=normalizar_correo(correo), is_active=True).first()
     if usuario is None or not usuario.check_password(password):
@@ -75,9 +81,17 @@ def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLog
     if usuario.rol == Rol.ALUMNO and not usuario.tiene_consentimiento:
         raise _sin_consentimiento()
 
-    paso = _paso_siguiente(usuario)
-    if paso is Paso.LISTO:
+    alcance = alcance_tras_la_contrasena(usuario)
+    if alcance is Alcance.COMPLETA:
         usuario.ultimo_acceso = timezone.now()
         usuario.save(update_fields=["ultimo_acceso"])
         registrar(Accion.LOGIN_OK, actor=usuario, peticion=peticion)
-    return ResultadoLogin(usuario=usuario, paso=paso)
+    elif alcance is Alcance.ENROLAR_MFA:
+        # Queda constancia de que la sesión emitida no es completa.
+        registrar(
+            Accion.LOGIN_OK,
+            actor=usuario,
+            peticion=peticion,
+            detalle={"sesion": "restringida", "pendiente": "enrolar_mfa"},
+        )
+    return ResultadoLogin(usuario=usuario, paso=_PASO_POR_ALCANCE[alcance], alcance=alcance)

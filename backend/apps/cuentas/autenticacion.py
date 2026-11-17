@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.core.csrf import exigir_csrf
 
-from .tokens import usuario_del_token
+from .tokens import alcance_vigente, usuario_del_token
 
 
 class AutenticacionPorCookie(BaseAuthentication):
@@ -39,7 +39,14 @@ class AutenticacionPorCookie(BaseAuthentication):
         if usuario is None:
             raise AuthenticationFailed()
 
+        alcance = alcance_vigente(usuario, token)
+        if alcance is None:
+            raise AuthenticationFailed()
+
         exigir_csrf(request)
+        # Lo leen los permisos (ver permisos.py) para distinguir una sesión
+        # completa de una restringida.
+        request.alcance = alcance
         return usuario, token
 
     def authenticate_header(self, request):
