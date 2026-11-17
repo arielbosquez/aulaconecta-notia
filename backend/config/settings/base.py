@@ -16,7 +16,12 @@ from config.entorno import (
     leer_lista,
     leer_opcion,
 )
-from config.sesion import RUTA_COOKIE_REFRESCO, nombres_de_cookies
+from config.sesion import (
+    RUTA_COOKIE_REFRESCO,
+    RUTA_COOKIE_TICKET_MFA,
+    nombre_cookie_ticket_mfa,
+    nombres_de_cookies,
+)
 
 # Carpeta backend/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -175,6 +180,11 @@ _COOKIES = nombres_de_cookies(produccion=es_produccion())
 COOKIE_ACCESO = _COOKIES["acceso"]
 COOKIE_REFRESCO = _COOKIES["refresco"]
 COOKIE_REFRESCO_RUTA = RUTA_COOKIE_REFRESCO
+# Ticket del paso intermedio del 2FA: firmado, de 5 minutos, solo para la
+# verificación (sección 8.1).
+COOKIE_TICKET_MFA = nombre_cookie_ticket_mfa(produccion=es_produccion())
+COOKIE_TICKET_MFA_RUTA = RUTA_COOKIE_TICKET_MFA
+MFA_DURACION_DEL_TICKET = timedelta(minutes=5)
 
 # El token CSRF sí lo lee el JavaScript (para enviarlo en X-CSRFToken), pero
 # tampoco viaja a otros sitios.
@@ -194,7 +204,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["apps.cuentas.permisos.SesionCompleta"],
     # Límites de peticiones (sección 12.7). Cada vista declara el suyo; se
     # cuentan en la caché en base de datos, común a todos los workers.
-    "DEFAULT_THROTTLE_RATES": {"login": "10/min"},
+    # "mfa" se cuenta por ticket y en ventanas de 300 segundos (5 cada 5 minutos).
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "mfa": "5/300s"},
     # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
     "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",
 }

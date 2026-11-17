@@ -54,3 +54,37 @@ class LimiteDeLoginPorIp(SimpleRateThrottle):
     def get_cache_key(self, request, view):
         ident = identificador_de_red(ip_del_cliente(request))
         return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
+class LimiteDeVerificacionMfa(SimpleRateThrottle):
+    """5 intentos de código cada 5 minutos por ticket (``DEFAULT_THROTTLE_RATES["mfa"]``).
+
+    Se cuenta por ticket, como pide la sección 12.7. Una petición sin ticket
+    válido se cuenta por IP, para que tampoco se pueda insistir sin él. Los
+    códigos incorrectos además suman al bloqueo de la cuenta.
+    """
+
+    scope = "mfa"
+
+    def parse_rate(self, rate):
+        """Acepta también una ventana en segundos, como ``"5/300s"``.
+
+        DRF solo entiende ``s``, ``m``, ``h`` y ``d`` (una unidad cada uno);
+        "5 cada 5 minutos" necesita la ventana completa.
+        """
+        cantidad, ventana = rate.split("/")
+        if ventana.endswith("s") and ventana[:-1].isdigit():
+            return int(cantidad), int(ventana[:-1])
+        return super().parse_rate(rate)
+
+    def get_cache_key(self, request, view):
+        from django.conf import settings
+
+        from .mfa import numero_de_ticket
+
+        numero = numero_de_ticket(request.COOKIES.get(settings.COOKIE_TICKET_MFA))
+        if numero:
+            ident = f"ticket:{numero}"
+        else:
+            ident = f"ip:{identificador_de_red(ip_del_cliente(request))}"
+        return self.cache_format % {"scope": self.scope, "ident": ident}

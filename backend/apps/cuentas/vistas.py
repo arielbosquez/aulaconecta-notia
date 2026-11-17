@@ -18,8 +18,15 @@ from apps.auditoria.servicios import registrar
 from apps.core.csrf import exigir_csrf
 
 from .cookies import borrar_cookies_de_sesion, poner_cookies_de_sesion
-from .limites import LimiteDeLoginPorIp
-from .mfa import confirmar_enrolamiento, iniciar_enrolamiento
+from .limites import LimiteDeLoginPorIp, LimiteDeVerificacionMfa
+from .mfa import (
+    confirmar_enrolamiento,
+    emitir_ticket,
+    iniciar_enrolamiento,
+    leer_ticket,
+    ticket_invalido,
+    verificar_segundo_factor,
+)
 from .models import Usuario
 from .serializadores import (
     SerializadorCambioPassword,
@@ -82,6 +89,10 @@ class VistaLogin(APIView):
             poner_cookies_de_sesion(respuesta, tokens)
             # Token CSRF nuevo para la sesión que empieza.
             rotate_token(request._request)
+        elif resultado.paso is Paso.MFA:
+            # Personal con 2FA: ninguna sesión todavía, solo el ticket firmado
+            # para enviar el código (5 minutos, cookie HttpOnly).
+            poner_cookie_de_ticket(respuesta, emitir_ticket(resultado.usuario))
         return respuesta
 
 
@@ -279,12 +290,77 @@ class VistaCambiarPassword(APIView):
         return respuesta
 
 
+def poner_cookie_de_ticket(respuesta, ticket: str) -> None:
+    respuesta.set_cookie(
+        settings.COOKIE_TICKET_MFA,
+        ticket,
+        max_age=int(settings.MFA_DURACION_DEL_TICKET.total_seconds()),
+        path=settings.COOKIE_TICKET_MFA_RUTA,
+        secure=True,
+        httponly=True,
+        samesite="Strict",
+    )
+
+
+def borrar_cookie_de_ticket(respuesta) -> None:
+    respuesta.set_cookie(
+        settings.COOKIE_TICKET_MFA,
+        "",
+        max_age=0,
+        path=settings.COOKIE_TICKET_MFA_RUTA,
+        secure=True,
+        httponly=True,
+        samesite="Strict",
+    )
+
+
+class VistaVerificarMfa(APIView):
+    """CU-02: segundo paso del login del personal, con el ticket del primero.
+
+    Recibe el código del TOTP o un código de recuperación. Si sirve, entrega
+    la sesión completa y gasta el ticket.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [LimiteDeVerificacionMfa]
+
+    def post(self, request):
+        exigir_csrf(request)
+        ticket = leer_ticket(request.COOKIES.get(settings.COOKIE_TICKET_MFA))
+        if ticket is None:
+            respuesta = Response(
+                {"codigo": "ticket_invalido", "mensaje": ticket_invalido().mensaje},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+            borrar_cookie_de_ticket(respuesta)
+            return respuesta
+
+        datos = SerializadorCodigoMfa(data=request.data)
+        datos.is_valid(raise_exception=True)
+        resultado = verificar_segundo_factor(
+            ticket, datos.validated_data["codigo"], peticion=request
+        )
+
+        cuerpo = {
+            "paso": Paso.LISTO.value,
+            "debe_cambiar_password": resultado.usuario.debe_cambiar_password,
+        }
+        if resultado.codigos_restantes is not None:
+            # Avisa cuántos códigos de recuperación le quedan.
+            cuerpo["codigos_restantes"] = resultado.codigos_restantes
+        respuesta = Response(cuerpo)
+        poner_cookies_de_sesion(respuesta, emitir_tokens(resultado.usuario, Alcance.COMPLETA))
+        borrar_cookie_de_ticket(respuesta)
+        rotate_token(request._request)
+        return respuesta
+
+
 class VistaEnrolarMfa(APIView):
     """Inicia la activación del 2FA: entrega el QR y el secreto (RS-06).
 
-    La puede usar la sesión restringida a enrolar el 2FA (y una completa del
-    personal que aún no lo tenga). Exige haber cambiado antes la contraseña
-    temporal.
+    La usa la sesión restringida a enrolar el 2FA: el personal no obtiene una
+    sesión completa sin él. Exige haber cambiado antes la contraseña temporal.
     """
 
     permission_classes = [IsAuthenticated]
@@ -309,7 +385,14 @@ class VistaConfirmarMfa(APIView):
         cuenta = confirmar_enrolamiento(
             request.user, datos.validated_data["codigo"], peticion=request
         )
-        respuesta = Response({"paso": Paso.LISTO.value, "debe_cambiar_password": False})
+        # Los códigos de recuperación se muestran esta única vez.
+        respuesta = Response(
+            {
+                "paso": Paso.LISTO.value,
+                "debe_cambiar_password": False,
+                "codigos_recuperacion": cuenta.codigos_nuevos,
+            }
+        )
         poner_cookies_de_sesion(respuesta, emitir_tokens(cuenta, Alcance.COMPLETA))
         rotate_token(request._request)
         return respuesta

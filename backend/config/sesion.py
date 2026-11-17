@@ -18,3 +18,16 @@ def nombres_de_cookies(*, produccion: bool) -> dict[str, str]:
     if produccion:
         return {"acceso": "__Host-notia_acceso", "refresco": "__Secure-notia_refresco"}
     return {"acceso": "notia_acceso", "refresco": "notia_refresco"}
+
+
+# La cookie del ticket del segundo factor solo viaja a la verificación.
+RUTA_COOKIE_TICKET_MFA = "/api/auth/mfa/"
+
+
+def nombre_cookie_ticket_mfa(*, produccion: bool) -> str:
+    """Nombre de la cookie del ticket del 2FA.
+
+    Lleva ``__Secure-`` y no ``__Host-`` porque su ruta no es ``/``: solo se
+    envía a ``/api/auth/mfa/``.
+    """
+    return "__Secure-notia_ticket_mfa" if produccion else "notia_ticket_mfa"
