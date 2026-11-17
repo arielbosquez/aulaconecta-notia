@@ -56,6 +56,35 @@ Estos requisitos aún no tienen implementación ni prueba. Cada fila pasa a la t
 | RS-15 | Dependencias fijadas con hash y auditadas | Transversal | Parcial (PR 0.3, AB#29: el CI instala con `--require-hashes` y `npm ci`, y ejecuta `pip-audit` y `npm audit --audit-level=high`; Dependabot semanal. Falta verlo en verde en GitHub y agregarlo como check obligatorio del ruleset) |
 | RS-20 | Exportación CSV protegida contra inyección de fórmulas | CU-13 | Pendiente |
 
+## Riesgos aceptados
+
+Decisiones en que el equipo conoce un riesgo y lo deja como está, con su motivo. Se revisan en el análisis de seguridad de la Fase 5 y cada vez que cambie lo que las justifica.
+
+### RA-01 · El token de refresco queda guardado en texto en la base de datos
+
+- **Qué pasa.** La lista negra de `djangorestframework-simplejwt` guarda cada token de refresco emitido, completo y sin hash, en la tabla `token_blacklist_outstandingtoken`. Se relaciona con RS-04.
+- **Impacto.** Quien logre leer esa tabla (una copia de respaldo expuesta, una inyección SQL o una cuenta de base de datos comprometida) puede usar un refresco que siga vigente para obtener una sesión de ese usuario sin conocer su contraseña. Desde el PR 1.5, el refresco de una sesión completa de un docente o administrador también le evitaría el segundo factor. Los tokens de acceso no se guardan.
+- **Mitigaciones que ya existen.**
+  - El refresco vence a las 8 horas y sirve una sola vez: al renovar queda en la lista negra. Un refresco ya rotado o vencido no sirve aunque esté en la tabla.
+  - Con la tabla sola no se pueden fabricar tokens: la firma usa `JWT_SIGNING_KEY`, que no está en la base.
+  - Subir `version_sesion` de un usuario invalida todos sus tokens de inmediato, estén o no en la tabla.
+  - El alcance viaja en el token y la renovación lo conserva: un refresco de sesión restringida no entrega una sesión completa.
+  - El acceso a la base está acotado: la aplicación usa `notia_app` (RS-19), solo se consulta con el ORM (sin SQL armado con cadenas) y en producción la conexión exige TLS.
+- **Por qué se acepta.** La arquitectura (sección 3) indica usar la lista negra de simplejwt. Guardar solo un hash obligaría a reemplazar los modelos y la lógica de la librería por código propio en la parte más delicada de la sesión, con más riesgo de error que el que se evita. La ventana de uso es de 8 horas como máximo.
+- **Pendiente.** Los refrescos vencidos no se borran solos de la tabla. La librería trae el comando `flushexpiredtokens`; falta decidir quién lo ejecuta y cada cuánto (lo ejecuta una persona, no un job de la base).
+
+### RA-02 · Un refresco reutilizado se rechaza, pero no cierra las demás sesiones del usuario
+
+- **Qué pasa.** Si llega un refresco que ya fue usado, `POST /api/auth/refresh` responde 401 y borra las cookies de ese navegador. No se sube `version_sesion`, así que las otras sesiones del usuario siguen abiertas. Se relaciona con RS-04.
+- **Impacto.** Si alguien roba un refresco y lo usa antes que su dueño, obtiene una sesión que puede seguir renovando hasta que el usuario cambie su contraseña o un administrador cierre sus sesiones. El dueño lo nota porque su propia renovación falla y debe volver a iniciar sesión, pero el sistema no lo trata como una alerta.
+- **Por qué no se revocan todas las sesiones.** Un refresco repetido no siempre es un robo: dos pestañas, o dos peticiones del mismo navegador, pueden intentar renovar al mismo tiempo con la misma cookie. Cerrar todas las sesiones en ese caso sacaría a un alumno de su prueba mientras el tiempo sigue corriendo en el servidor (CU-05), y el daño sería mayor y más frecuente que el riesgo que se evita.
+- **Mitigaciones que ya existen.** El refresco viaja solo en una cookie `HttpOnly`, `Secure` y `SameSite=Strict`, limitada a `/api/auth/`, de modo que el JavaScript no puede leerlo (RS-04 y RS-13). La renovación bloquea el registro del token: de dos peticiones simultáneas con el mismo refresco, solo una obtiene un par nuevo.
+- **Pendiente.** El rechazo no queda en la bitácora: hoy no existe una acción para ese evento. Conviene evaluarlo junto con el registro de intentos fallidos del PR 1.3.
+
+## Verificaciones pendientes en el despliegue
+
+- **Formato de `X-Forwarded-For` en Azure App Service (Fase 5).** `apps.core.red.ip_del_cliente` supone que App Service agrega la IP del cliente al final de la cabecera, con o sin puerto, y que hay un solo proxy delante (`PROXIES_DE_CONFIANZA = 1`). Al desplegar hay que comprobarlo con una petición real que envíe una cabecera falsificada y revisar la IP que queda en la bitácora. Si hay más proxies (por ejemplo, Front Door), se ajusta la variable.
+
 ## Registro de ejecuciones
 
 | Fecha | PR | Resultado |
