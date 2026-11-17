@@ -1,4 +1,13 @@
 ---
+// Tipografías autoalojadas: Vite copia los .woff2 al build y se sirven desde
+// el mismo origen (CSP font-src 'self'). Solo el subconjunto latino, que
+// incluye tildes, ñ y ¿¡.
+import '@fontsource/atkinson-hyperlegible/latin-400.css';
+import '@fontsource/atkinson-hyperlegible/latin-700.css';
+import '@fontsource/atkinson-hyperlegible-mono/latin-500.css';
+import '@fontsource/atkinson-hyperlegible-mono/latin-700.css';
+import '@fontsource/bricolage-grotesque/latin-600.css';
+import '@fontsource/bricolage-grotesque/latin-800.css';
 import '../styles/base.css';
 
 interface Props {
@@ -14,6 +23,7 @@ const { titulo } = Astro.props;
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#1b1f2a" />
     <title>{titulo} · NotIA</title>
   </head>
   <body>

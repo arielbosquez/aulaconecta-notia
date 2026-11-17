@@ -1,0 +1,124 @@
+---
+// Pantallas de acceso (ingresar, cambiar la contraseña, activar el 2FA): el
+// panel oscuro con las ondas a la izquierda (alrededor del 40%) y una sola
+// tarjeta centrada en el área clara.
+import Marca from '../components/base/Marca.svelte';
+import Base from './Base.astro';
+
+interface Props {
+  titulo: string;
+}
+
+const { titulo } = Astro.props;
+
+// Alturas de las ondas del panel (clases, no atributos style: la CSP no los permite).
+const ondas = [3, 5, 8, 11, 14, 12, 9, 6, 10, 13, 15, 12, 8, 5, 9, 12, 7, 4, 6, 4, 3, 2];
+const acento = 10;
+---
+
+<Base titulo={titulo}>
+  <div class="acceso">
+    <aside class="panel" aria-hidden="true">
+      <Marca tono="clara" tamano={44} />
+      <div class="ondas">
+        {ondas.map((alto, indice) => <span class:list={['onda', `alto-${alto}`, { acento: indice === acento }]} />)}
+      </div>
+      <p class="lema">Escucha la pregunta.<br />Elige con calma.</p>
+    </aside>
+    <main class="area">
+      <div class="marca-movil"><Marca tamano={36} /></div>
+      <slot />
+      <footer class="pie">
+        <a href="/privacidad">Aviso de privacidad</a>
+      </footer>
+    </main>
+  </div>
+</Base>
+
+<style>
+  .acceso {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    min-height: 100vh;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 3.5rem;
+    background: var(--tinta);
+    color: var(--papel);
+  }
+
+  .ondas {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    height: 11.25rem;
+  }
+
+  .onda {
+    width: 0.625rem;
+    border-radius: 5px;
+    background: var(--tinta-suave);
+  }
+
+  .onda.acento {
+    background: var(--al-aire);
+  }
+
+  .alto-2 { height: 12%; }
+  .alto-3 { height: 18%; }
+  .alto-4 { height: 24%; }
+  .alto-5 { height: 30%; }
+  .alto-6 { height: 36%; }
+  .alto-7 { height: 42%; }
+  .alto-8 { height: 48%; }
+  .alto-9 { height: 54%; }
+  .alto-10 { height: 60%; }
+  .alto-11 { height: 66%; }
+  .alto-12 { height: 74%; }
+  .alto-13 { height: 82%; }
+  .alto-14 { height: 90%; }
+  .alto-15 { height: 100%; }
+
+  .lema {
+    font-family: var(--letra-titulo);
+    font-weight: 600;
+    font-size: 1.875rem;
+    line-height: 1.2;
+  }
+
+  .area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 3rem 1.5rem;
+  }
+
+  .marca-movil {
+    display: none;
+  }
+
+  .pie {
+    font-size: 0.9375rem;
+  }
+
+  /* No es obligatorio en celulares, pero no debe romperse: el panel se oculta. */
+  @media (max-width: 52rem) {
+    .acceso {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .panel {
+      display: none;
+    }
+
+    .marca-movil {
+      display: block;
+    }
+  }
+</style>
