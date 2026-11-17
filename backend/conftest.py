@@ -116,3 +116,29 @@ def django_db_setup(django_db_blocker):
         connection.close()
     ajustes.update(original)
     _borrar_base(nombre)
+
+
+@pytest.fixture
+def _volver_a_notia_app():
+    """Al final de la prueba, deja la conexión otra vez como ``notia_app``."""
+    yield
+    _usar(connection.settings_dict["NAME"], ROL_APLICACION, _variable("DB_PASSWORD"))
+
+
+@pytest.fixture
+def bd_con_transacciones(_volver_a_notia_app, transactional_db):
+    """Base con transacciones reales, para probar peticiones simultáneas.
+
+    Las pruebas normales corren dentro de una transacción que se deshace al
+    final, así que otra conexión (otro hilo) no ve sus datos. Con este fixture
+    cada operación se confirma de verdad y varios hilos, cada uno con su
+    conexión, compiten por las mismas filas como en producción.
+
+    La prueba corre como ``notia_app``. Al terminar, pytest-django vacía las
+    tablas con ``TRUNCATE``, que ``notia_app`` no tiene (y no debe tener sobre
+    la bitácora): solo ese vaciado se hace como ``notia_owner``. El orden de
+    los fixtures lo garantiza: este cambia a ``notia_owner`` antes del vaciado
+    de ``transactional_db`` y ``_volver_a_notia_app`` vuelve después.
+    """
+    yield
+    _usar(connection.settings_dict["NAME"], ROL_DUENO, _variable("DB_OWNER_PASSWORD"))
