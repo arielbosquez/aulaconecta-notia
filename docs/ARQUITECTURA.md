@@ -129,7 +129,7 @@ aulaconecta-notia/
         │ TLS, rol notia_app            │ identidad administrada
         ▼                               ▼
 [PostgreSQL Flexible]  [Blob Storage privado]  [Key Vault]   ← límite 2 (red privada)
-        
+
 [Azure AI Speech] ← servicio externo; solo recibe el texto de las preguntas al publicar
 [GitHub → GitHub Actions → despliegue con OIDC]; [Azure Boards ↔ GitHub con AB#]
 ```
