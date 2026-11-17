@@ -1,10 +1,12 @@
 import uuid
+from datetime import datetime
 
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
 from django.db.models.functions import Lower
+from django.utils import timezone
 
 from .managers import UsuarioManager, normalizar_correo
 
@@ -126,6 +128,12 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     @property
     def tiene_consentimiento(self) -> bool:
         return self.consentimiento_verificado_en is not None
+
+    def esta_bloqueado(self, ahora: datetime | None = None) -> bool:
+        """``True`` mientras dure el bloqueo por intentos fallidos."""
+        return self.bloqueado_hasta is not None and self.bloqueado_hasta > (
+            ahora or timezone.now()
+        )
 
     def cerrar_todas_las_sesiones(self) -> None:
         """Invalida todos los tokens emitidos. Quien llama guarda el cambio."""

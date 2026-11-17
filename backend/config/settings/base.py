@@ -106,6 +106,19 @@ DATABASES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Caché en la misma base de datos (sección 12.7): los límites de intentos son
+# comunes a todos los workers de gunicorn sin agregar Redis. La tabla la crea
+# la migración apps/core/migrations/0001_tabla_cache.py, que corre como
+# notia_owner; notia_app no puede crear tablas y solo lee y escribe filas.
+TABLA_CACHE = "notia_cache"
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": TABLA_CACHE,
+        "OPTIONS": {"MAX_ENTRIES": 20000},
+    }
+}
+
 # Contraseñas solo con Argon2id (RS-01). No hay otro algoritmo en la lista:
 # una contraseña guardada con un hash más débil no se aceptaría.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.Argon2PasswordHasher"]
@@ -179,6 +192,9 @@ REST_FRAMEWORK = {
     # contraseña pendientes. Lo que una sesión restringida puede usar se
     # declara vista por vista.
     "DEFAULT_PERMISSION_CLASSES": ["apps.cuentas.permisos.SesionCompleta"],
+    # Límites de peticiones (sección 12.7). Cada vista declara el suyo; se
+    # cuentan en la caché en base de datos, común a todos los workers.
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min"},
     # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
     "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",
 }
@@ -217,6 +233,11 @@ LOGGING = {
 
 # --- Cuentas ---
 DOMINIO_INSTITUCIONAL = leer("DOMINIO_INSTITUCIONAL", defecto="aulaconecta.cl").lower()
+
+# Bloqueo por intentos fallidos (sección 8.1, RS-02): 5 contraseñas
+# incorrectas seguidas bloquean la cuenta por 15 minutos.
+LOGIN_INTENTOS_ANTES_DE_BLOQUEAR = 5
+LOGIN_DURACION_DEL_BLOQUEO = timedelta(minutes=15)
 
 # --- Voz ---
 # "prueba" genera audios sintéticos sin red; "azure" usa Azure AI Speech.

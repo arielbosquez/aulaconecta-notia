@@ -15,6 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core.csrf import exigir_csrf
 
 from .cookies import borrar_cookies_de_sesion, poner_cookies_de_sesion
+from .limites import LimiteDeLoginPorIp
 from .serializadores import SerializadorLogin
 from .servicios import Paso, iniciar_sesion
 from .tokens import alcance_vigente, emitir_tokens, usuario_del_token
@@ -37,6 +38,9 @@ class VistaLogin(APIView):
     # Sin autenticación previa: una cookie vieja o inválida no impide entrar.
     authentication_classes = []
     permission_classes = [AllowAny]
+    # Se aplica antes que todo lo demás (CSRF, validación y contraseña):
+    # pasado el límite, la petición responde 429 sin calcular ningún hash.
+    throttle_classes = [LimiteDeLoginPorIp]
 
     def post(self, request):
         exigir_csrf(request)
