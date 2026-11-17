@@ -18,8 +18,8 @@ from apps.core.csrf import exigir_csrf
 
 from .cookies import borrar_cookies_de_sesion, poner_cookies_de_sesion
 from .limites import LimiteDeLoginPorIp
-from .serializadores import SerializadorLogin
-from .servicios import Paso, iniciar_sesion
+from .serializadores import SerializadorCambioPassword, SerializadorLogin
+from .servicios import Paso, cambiar_password, iniciar_sesion
 from .tokens import alcance_vigente, emitir_tokens, usuario_del_token
 
 
@@ -195,6 +195,30 @@ class VistaLogout(APIView):
             return usuario_del_token(AccessToken(crudo))
         except TokenError:
             return None
+
+
+class VistaCambiarPassword(APIView):
+    """CU-04: cambia la contraseña de la sesión actual.
+
+    Es uno de los dos endpoints (con el logout) que puede usar una cuenta
+    con la contraseña temporal pendiente de cambio: el resto de la API la
+    rechaza con ``SesionCompleta`` hasta que la cambie. También lo puede usar
+    una sesión restringida a enrolar el 2FA, para que el personal con
+    contraseña temporal no quede trabado.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        datos = SerializadorCambioPassword(data=request.data)
+        datos.is_valid(raise_exception=True)
+        cambiar_password(
+            request.user,
+            actual=datos.validated_data["password_actual"],
+            nueva=datos.validated_data["password_nueva"],
+            peticion=request,
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class VistaYo(APIView):

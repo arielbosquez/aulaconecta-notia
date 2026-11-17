@@ -10,3 +10,10 @@ class SerializadorLogin(SerializadorEstricto):
     # Sin recortar espacios: la contraseña se compara tal como se escribió.
     # El largo máximo evita gastar tiempo de hash en entradas enormes.
     password = serializers.CharField(max_length=128, trim_whitespace=False)
+
+
+class SerializadorCambioPassword(SerializadorEstricto):
+    """Datos del cambio de contraseña. La política se aplica en el servicio."""
+
+    password_actual = serializers.CharField(max_length=128, trim_whitespace=False)
+    password_nueva = serializers.CharField(max_length=128, trim_whitespace=False)
