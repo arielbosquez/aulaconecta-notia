@@ -302,7 +302,8 @@ FUNCION finalizar(intento, estado):
 - La firma de los JWT usa una llave propia (`JWT_SIGNING_KEY`), distinta de `SECRET_KEY`. Los tokens llevan el claim `ver` con `version_sesion`; si no coincide con la base de datos, se rechazan. Cambiar o restablecer la contraseña, desactivar la cuenta o reiniciar el 2FA incrementa `version_sesion`, lo que cierra todas las sesiones.
 - **CSRF:** como los tokens viajan en cookies, la clase de autenticación propia que lee la cookie de acceso también exige el token CSRF de Django (cookie `csrftoken` legible y cabecera `X-CSRFToken`) en todos los métodos que modifican datos. `GET /api/auth/csrf` entrega la cookie.
 - **Límite de intentos:** 5 intentos fallidos seguidos bloquean la cuenta por 15 minutos (`bloqueado_hasta`); el administrador puede desbloquearla antes. Además, el endpoint de login tiene un límite por IP de 10 peticiones por minuto (throttling de DRF con caché en base de datos, que funciona con varios workers).
-- **Sin enumeración de usuarios:** el mismo mensaje ("Correo o contraseña incorrectos") y un tiempo de respuesta similar cuando el usuario no existe (se ejecuta el hasher contra un hash ficticio). El mensaje de cuenta bloqueada solo se muestra si la contraseña era correcta.
+- **Sin enumeración de usuarios ni oráculo del bloqueo:** el mismo código (401 `credenciales_invalidas`), el mismo mensaje ("Correo o contraseña incorrectos, o la cuenta está bloqueada temporalmente. Intenta de nuevo en unos minutos.") y un tiempo de respuesta similar cuando el usuario no existe, la cuenta está desactivada, la contraseña es incorrecta o la cuenta está bloqueada, **con cualquier contraseña, incluso la correcta**. En todos esos casos se ejecuta el hasher una sola vez; si no hay un hash con que comparar, o la cuenta está bloqueada, se usa un hash ficticio. Durante el bloqueo la contraseña nunca se compara con la real, así que ni la respuesta ni el tiempo pueden revelar un acierto. Por eso el mensaje nombra las dos posibilidades.
+- **Por qué no hay un aviso de cuenta bloqueada (cambio del PR 1.3):** la versión anterior respondía 423 "Cuenta bloqueada temporalmente" si la contraseña era correcta durante el bloqueo. Eso convertía el bloqueo en un oráculo: un atacante podía seguir probando contraseñas durante los 15 minutos y reconocer la correcta porque recibía otra respuesta, con lo que el bloqueo no frenaba nada. Además confirmaba que el correo existe. El precio es de usabilidad: quien escribe su contraseña correcta durante el bloqueo no sabe que esa era la correcta, y el mensaje le indica esperar unos minutos. La bitácora sí registra cada intento durante el bloqueo (`LOGIN_FALLIDO` con motivo `cuenta_bloqueada`), y el colegio puede desbloquear la cuenta antes (CU-15).
 - **2FA (TOTP) obligatorio para docentes y administradores:** el primer ingreso los lleva a activarlo. El secreto se genera en el servidor y se cifra con Fernet (`MFA_ENCRYPTION_KEY`). El QR se genera como SVG en el servidor. Se entregan 8 códigos de recuperación de un solo uso, guardados con hash. Se rechaza reutilizar un código del mismo intervalo (`mfa_ultimo_paso`). El paso intermedio usa un ticket firmado (`TimestampSigner`, 5 minutos) en una cookie httpOnly, y el endpoint de verificación tiene su propio límite (5 intentos cada 5 minutos).
 - **Cuenta de alumno:** no puede iniciar sesión hasta que un administrador registre que el colegio tiene el consentimiento del apoderado (`consentimiento_verificado_en`).
 - **Cerrar sesión:** agrega el refresco a la lista negra y borra las cookies.
@@ -315,22 +316,31 @@ FUNCION finalizar(intento, estado):
 ```
 FUNCION login(correo, password, ip):
     aplicar límite por IP (10/min) → 429 si se supera
+    GENERICO = 401 "Correo o contraseña incorrectos, o la cuenta está bloqueada temporalmente. Intenta de nuevo en unos minutos."
     u = buscar usuario por correo normalizado
     SI u no existe O no activo:
         verificar password contra HASH_FICTICIO   # iguala el tiempo
         auditar(LOGIN_FALLIDO, actor=NULO, detalle={motivo:"credenciales"})
-        ERROR 401 "Correo o contraseña incorrectos"
+        ERROR GENERICO
     SI u.bloqueado_hasta > ahora:
-        verificar password contra HASH_FICTICIO
-        ERROR 401 genérico (si la contraseña es correcta: 423 "Cuenta bloqueada temporalmente")
+        verificar password contra HASH_FICTICIO   # nunca contra u.password: sin oráculo
+        auditar(LOGIN_FALLIDO, objeto=u, detalle={motivo:"cuenta_bloqueada"})
+        ERROR GENERICO                             # igual con la contraseña correcta o no
     SI NO check_password(password, u.password):
-        u.intentos_fallidos += 1
-        SI u.intentos_fallidos >= 5:
-            u.bloqueado_hasta = ahora + 15 min; auditar(CUENTA_BLOQUEADA)
-        auditar(LOGIN_FALLIDO); ERROR 401 genérico
+        EN UNA TRANSACCIÓN, con la fila de u bloqueada (SELECT … FOR UPDATE):
+            releer intentos_fallidos y bloqueado_hasta desde la base
+            SI otra petición ya la bloqueó: auditar(LOGIN_FALLIDO, motivo:"cuenta_bloqueada")
+            SINO:
+                intentos = intentos_fallidos + 1; auditar(LOGIN_FALLIDO, objeto=u)
+                SI intentos >= 5:
+                    bloqueado_hasta = ahora + 15 min; intentos_fallidos = 0
+                    auditar(CUENTA_BLOQUEADA, objeto=u)
+                SINO: intentos_fallidos = intentos
+        ERROR GENERICO                             # después de confirmar la transacción
     SI u.rol == ALUMNO Y u.consentimiento_verificado_en es NULO:
+        auditar(LOGIN_FALLIDO, actor=u, detalle={motivo:"sin_consentimiento"})
         ERROR 403 "Tu cuenta aún no está habilitada. Consulta en el colegio."
-    u.intentos_fallidos = 0
+    u.intentos_fallidos = 0 (salvo que otra petición la acabe de bloquear)
     SI u.rol en (DOCENTE, ADMIN):
         SI u.mfa_habilitado: emitir cookie ticket_mfa; RETORNAR {paso:"mfa"}
         SINO: emitir sesión restringida a enrolar 2FA; RETORNAR {paso:"enrolar_mfa"}
