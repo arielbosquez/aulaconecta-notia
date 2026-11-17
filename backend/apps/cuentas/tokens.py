@@ -17,7 +17,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from django.core.exceptions import ValidationError
+from rest_framework_simplejwt.exceptions import TokenBackendError
 from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.state import token_backend
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.tokens import RefreshToken, Token
 
 from .models import Usuario
@@ -100,3 +103,24 @@ def alcance_vigente(usuario: Usuario, token: Token) -> Alcance | None:
     if alcance is Alcance.COMPLETA and usuario.es_del_personal and not usuario.mfa_habilitado:
         return None
     return alcance
+
+
+def datos_de_refresco_reutilizado(crudo: str) -> dict | None:
+    """Devuelve el contenido del token si es un refresco auténtico que ya se usó.
+
+    ``RefreshToken(crudo)`` rechaza con el mismo error un refresco ya usado,
+    uno vencido y uno falsificado. Aquí se separa el primer caso, el único que
+    merece quedar en la bitácora (RA-02): primero se comprueban la firma y el
+    vencimiento, y solo entonces la lista negra. Así un token inventado no
+    puede llenar la bitácora con registros a nombre de otra persona.
+    """
+    try:
+        datos = token_backend.decode(crudo, verify=True)
+    except TokenBackendError:
+        return None
+    if datos.get(api_settings.TOKEN_TYPE_CLAIM) != RefreshToken.token_type:
+        return None
+    jti = datos.get(api_settings.JTI_CLAIM)
+    if not jti or not BlacklistedToken.objects.filter(token__jti=jti).exists():
+        return None
+    return datos

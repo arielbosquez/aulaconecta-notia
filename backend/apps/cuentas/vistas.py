@@ -1,6 +1,7 @@
 """Endpoints de autenticación: ``/api/auth/`` (sección 11 de la arquitectura)."""
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.middleware.csrf import get_token, rotate_token
 from rest_framework import status
@@ -18,9 +19,18 @@ from apps.core.csrf import exigir_csrf
 
 from .cookies import borrar_cookies_de_sesion, poner_cookies_de_sesion
 from .limites import LimiteDeLoginPorIp
+from .models import Usuario
 from .serializadores import SerializadorCambioPassword, SerializadorLogin
 from .servicios import Paso, cambiar_password, iniciar_sesion
-from .tokens import alcance_vigente, emitir_tokens, usuario_del_token
+from .tokens import (
+    alcance_vigente,
+    datos_de_refresco_reutilizado,
+    emitir_tokens,
+    usuario_del_token,
+)
+
+# Un mismo refresco reutilizado deja como máximo un registro por minuto.
+SEGUNDOS_ENTRE_AVISOS_DE_REUTILIZACION = 60
 
 
 class VistaCsrf(APIView):
@@ -69,6 +79,36 @@ class VistaLogin(APIView):
         return respuesta
 
 
+def _registrar_si_es_reutilizado(crudo: str, peticion) -> None:
+    """Deja en la bitácora el uso de un refresco que ya se había usado (RA-02).
+
+    Un refresco repetido puede ser un robo o solo dos pestañas que renovaron
+    a la vez. No se cierran las demás sesiones (ver RA-02), pero queda
+    constancia para que el administrador pueda revisarlo (CU-16).
+
+    - Nunca se guarda el token: solo la cuenta a la que pertenece, la IP, el
+      navegador y el motivo.
+    - Sin actor: quien lo usó pudo no ser el dueño de la cuenta.
+    - Como pide la sección 10 para los accesos denegados, con límite de
+      frecuencia: un registro por token cada minuto, aunque se repita mil
+      veces. La marca vive en la caché, con el identificador del token (jti),
+      que no sirve para nada sin el token firmado.
+    """
+    datos = datos_de_refresco_reutilizado(crudo)
+    if datos is None:
+        return
+    marca = f"refresco_reutilizado:{datos[api_settings.JTI_CLAIM]}"
+    if not cache.add(marca, True, timeout=SEGUNDOS_ENTRE_AVISOS_DE_REUTILIZACION):
+        return
+    cuenta = Usuario.objects.filter(pk=datos.get(api_settings.USER_ID_CLAIM)).first()
+    registrar(
+        Accion.ACCESO_DENEGADO,
+        peticion=peticion,
+        objeto=cuenta,
+        detalle={"motivo": "refresco_reutilizado"},
+    )
+
+
 class VistaRefresh(APIView):
     """Cambia el token de refresco por un par nuevo. Cada refresco sirve una sola vez."""
 
@@ -77,7 +117,7 @@ class VistaRefresh(APIView):
 
     def post(self, request):
         exigir_csrf(request)
-        tokens = self._rotar(request.COOKIES.get(settings.COOKIE_REFRESCO))
+        tokens = self._rotar(request.COOKIES.get(settings.COOKIE_REFRESCO), request)
         if tokens is None:
             return self._sesion_terminada()
         respuesta = Response(status=status.HTTP_204_NO_CONTENT)
@@ -86,7 +126,7 @@ class VistaRefresh(APIView):
 
     @staticmethod
     @transaction.atomic
-    def _rotar(crudo: str | None):
+    def _rotar(crudo: str | None, peticion):
         """Devuelve tokens nuevos, o ``None`` si el refresco no vale."""
         if not crudo:
             return None
@@ -94,6 +134,7 @@ class VistaRefresh(APIView):
             # Comprueba firma, vencimiento, tipo y lista negra.
             refresco = RefreshToken(crudo)
         except TokenError:
+            _registrar_si_es_reutilizado(crudo, peticion)
             return None
 
         # Se bloquea el registro del token: dos peticiones simultáneas con el
@@ -108,6 +149,8 @@ class VistaRefresh(APIView):
         try:
             refresco.check_blacklist()
         except TokenError:
+            # Otra petición lo usó mientras esta esperaba el bloqueo.
+            _registrar_si_es_reutilizado(crudo, peticion)
             return None
 
         usuario = usuario_del_token(refresco)
