@@ -57,25 +57,21 @@ _PASO_POR_ALCANCE = {
 }
 
 
+MENSAJE_CREDENCIALES_INVALIDAS = (
+    "Correo o contraseña incorrectos, o la cuenta está bloqueada temporalmente. "
+    "Intenta de nuevo en unos minutos."
+)
+
+
 def _credenciales_invalidas() -> ErrorApi:
     # El mismo error si el correo no existe, si la cuenta está desactivada, si
-    # la contraseña no coincide o si la cuenta está bloqueada y la contraseña
-    # no coincide: la respuesta no revela cuál fue el caso.
+    # la contraseña no coincide o si la cuenta está bloqueada (con cualquier
+    # contraseña, correcta o no): la respuesta no revela cuál fue el caso. Por
+    # eso el mensaje nombra también el bloqueo.
     return ErrorApi(
         "credenciales_invalidas",
-        "Correo o contraseña incorrectos",
+        MENSAJE_CREDENCIALES_INVALIDAS,
         estado=status.HTTP_401_UNAUTHORIZED,
-    )
-
-
-def _cuenta_bloqueada() -> ErrorApi:
-    # Solo lo ve quien escribió la contraseña correcta: a un extraño no le
-    # confirma que el correo existe ni que la cuenta está bloqueada.
-    return ErrorApi(
-        "cuenta_bloqueada",
-        "Cuenta bloqueada temporalmente por varios intentos fallidos. "
-        "Vuelve a intentarlo en 15 minutos o pide ayuda en el colegio.",
-        estado=status.HTTP_423_LOCKED,
     )
 
 
@@ -212,8 +208,8 @@ def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLog
     avanzaría.
 
     Sin enumeración de usuarios (RS-03): en todos los caminos se ejecuta el
-    hasher una sola vez, y el correo inexistente, la cuenta desactivada y la
-    contraseña incorrecta responden el mismo error.
+    hasher una sola vez, y el correo inexistente, la cuenta desactivada, la
+    contraseña incorrecta y la cuenta bloqueada responden el mismo error.
     """
     # El hash ficticio se prepara antes de buscar al usuario: así el costo de
     # crearlo (solo la primera vez en cada proceso) lo pagan todos por igual.
@@ -226,12 +222,13 @@ def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLog
         raise _credenciales_invalidas()
 
     if usuario.esta_bloqueado():
-        # Mientras dure el bloqueo la contraseña se comprueba igual (cuesta lo
-        # mismo que en los otros casos), pero no se cuenta ni deja entrar.
-        correcta = _contrasena_correcta(usuario, password)
+        # Mientras dure el bloqueo la contraseña NO se compara con la real: si
+        # una contraseña correcta recibiera otra respuesta (antes, un 423), el
+        # bloqueo serviría de oráculo y se podría seguir adivinando durante
+        # los 15 minutos. Se ejecuta el hasher contra el hash ficticio, que
+        # cuesta lo mismo, y la respuesta es el mismo error genérico.
+        _gastar_lo_mismo_que_un_hash(password)
         _registrar_fallo("cuenta_bloqueada", usuario=usuario, peticion=peticion)
-        if correcta:
-            raise _cuenta_bloqueada()
         raise _credenciales_invalidas()
 
     if not _contrasena_correcta(usuario, password):

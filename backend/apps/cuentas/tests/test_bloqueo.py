@@ -16,7 +16,10 @@ from apps.cuentas.servicios import _reiniciar_intentos, contar_intento_fallido, 
 
 from .conftest import CLAVE, OTRA_CLAVE, crear_usuario
 
-MENSAJE_GENERICO = "Correo o contraseña incorrectos"
+MENSAJE_GENERICO = (
+    "Correo o contraseña incorrectos, o la cuenta está bloqueada temporalmente. "
+    "Intenta de nuevo en unos minutos."
+)
 QUINCE_MINUTOS = timedelta(minutes=15)
 
 
@@ -78,12 +81,13 @@ def test_cinco_fallos_seguidos_bloquean_la_cuenta_por_15_minutos(navegador, admi
 
 
 @pytest.mark.django_db
-def test_con_la_cuenta_bloqueada_la_contrasena_correcta_recibe_423(navegador, alumno):
+def test_con_la_cuenta_bloqueada_la_contrasena_correcta_no_entra_y_recibe_el_error_generico(
+    navegador, alumno
+):
     _fallar(navegador, alumno, 5)
     respuesta = navegador.login(alumno.correo, CLAVE)
-    assert respuesta.status_code == 423
-    assert respuesta.json()["codigo"] == "cuenta_bloqueada"
-    assert "bloqueada temporalmente" in respuesta.json()["mensaje"]
+    assert respuesta.status_code == 401
+    assert respuesta.json() == {"codigo": "credenciales_invalidas", "mensaje": MENSAJE_GENERICO}
     assert settings.COOKIE_ACCESO not in respuesta.cookies
     assert settings.COOKIE_REFRESCO not in respuesta.cookies
     assert not _registros(Accion.LOGIN_OK).exists()
@@ -122,7 +126,7 @@ def test_el_bloqueo_vence_a_los_15_minutos(navegador, alumno):
     with time_machine.travel(inicio, tick=False):
         _fallar(navegador, alumno, 5)
     with time_machine.travel(inicio + QUINCE_MINUTOS - timedelta(seconds=1), tick=False):
-        assert navegador.login(alumno.correo).status_code == 423
+        assert navegador.login(alumno.correo).status_code == 401
     with time_machine.travel(inicio + QUINCE_MINUTOS + timedelta(seconds=1), tick=False):
         respuesta = navegador.login(alumno.correo)
         assert respuesta.status_code == 200

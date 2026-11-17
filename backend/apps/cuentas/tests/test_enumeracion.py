@@ -24,7 +24,13 @@ from .conftest import CLAVE, OTRA_CLAVE, Navegador, crear_usuario
 
 pytestmark = pytest.mark.django_db
 
-GENERICO = {"codigo": "credenciales_invalidas", "mensaje": "Correo o contraseña incorrectos"}
+GENERICO = {
+    "codigo": "credenciales_invalidas",
+    "mensaje": (
+        "Correo o contraseña incorrectos, o la cuenta está bloqueada temporalmente. "
+        "Intenta de nuevo en unos minutos."
+    ),
+}
 
 
 def _bloquear(usuario):
@@ -112,11 +118,12 @@ def test_un_ingreso_correcto_tambien_calcula_argon2id_una_sola_vez(navegador, al
     assert _contar_hashes(navegador, alumno.correo, CLAVE) == (200, 1)
 
 
-def test_el_aviso_de_cuenta_bloqueada_solo_aparece_con_la_contrasena_correcta(navegador, alumno):
+def test_con_la_cuenta_bloqueada_cualquier_contrasena_calcula_argon2id_una_sola_vez(
+    navegador, alumno
+):
     _bloquear(alumno)
     assert _contar_hashes(navegador, alumno.correo, OTRA_CLAVE) == (401, 1)
-    estado, hashes = _contar_hashes(navegador, alumno.correo, CLAVE)
-    assert (estado, hashes) == (423, 1)
+    assert _contar_hashes(navegador, alumno.correo, CLAVE) == (401, 1)
 
 
 def test_el_hash_ficticio_es_argon2id_y_no_corresponde_a_ninguna_contrasena_conocida():

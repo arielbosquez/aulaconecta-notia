@@ -20,7 +20,10 @@ pytestmark = pytest.mark.django_db
 
 ACCESO = settings.COOKIE_ACCESO
 REFRESCO = settings.COOKIE_REFRESCO
-MENSAJE_GENERICO = "Correo o contraseña incorrectos"
+MENSAJE_GENERICO = (
+    "Correo o contraseña incorrectos, o la cuenta está bloqueada temporalmente. "
+    "Intenta de nuevo en unos minutos."
+)
 
 
 def _yo(navegador):
