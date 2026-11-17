@@ -312,7 +312,8 @@ def cambiar_password(usuario: Usuario, *, actual: str, nueva: str, peticion=None
     se compara con la real.
 
     Es la salida de la contraseña temporal: deja ``debe_cambiar_password`` en
-    ``False``. Devuelve el usuario actualizado.
+    ``False``. Cierra todas las sesiones de la cuenta; la vista le entrega a
+    este navegador un par de tokens nuevo. Devuelve el usuario actualizado.
     """
     _hash_ficticio()
     if usuario.esta_bloqueado():
@@ -331,6 +332,22 @@ def cambiar_password(usuario: Usuario, *, actual: str, nueva: str, peticion=None
         cuenta.set_password(nueva)
         cuenta.debe_cambiar_password = False
         cuenta.intentos_fallidos = 0
-        cuenta.save(update_fields=["password", "debe_cambiar_password", "intentos_fallidos"])
-        registrar(Accion.PASSWORD_CAMBIADA, actor=cuenta, peticion=peticion)
+        # Sube version_sesion: todos los tokens emitidos antes (los de este
+        # navegador y los de cualquier otro) dejan de valer de inmediato. Si
+        # alguien más conocía la contraseña anterior, pierde su sesión.
+        cuenta.cerrar_todas_las_sesiones()
+        cuenta.save(
+            update_fields=[
+                "password",
+                "debe_cambiar_password",
+                "intentos_fallidos",
+                "version_sesion",
+            ]
+        )
+        registrar(
+            Accion.PASSWORD_CAMBIADA,
+            actor=cuenta,
+            peticion=peticion,
+            detalle={"sesiones_cerradas": True},
+        )
     return cuenta

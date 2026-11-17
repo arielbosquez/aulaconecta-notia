@@ -205,6 +205,8 @@ class VistaCambiarPassword(APIView):
     rechaza con ``SesionCompleta`` hasta que la cambie. También lo puede usar
     una sesión restringida a enrolar el 2FA, para que el personal con
     contraseña temporal no quede trabado.
+
+    Al cambiarla se cierran todas las sesiones de la cuenta (sección 8.1).
     """
 
     permission_classes = [IsAuthenticated]
@@ -212,13 +214,20 @@ class VistaCambiarPassword(APIView):
     def post(self, request):
         datos = SerializadorCambioPassword(data=request.data)
         datos.is_valid(raise_exception=True)
-        cambiar_password(
+        cuenta = cambiar_password(
             request.user,
             actual=datos.validated_data["password_actual"],
             nueva=datos.validated_data["password_nueva"],
             peticion=request,
         )
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        # El cambio cerró todas las sesiones, también esta. Quien acaba de
+        # demostrar que conoce la contraseña recibe un par nuevo con la
+        # versión nueva y el mismo alcance: cambiar la contraseña nunca
+        # convierte una sesión restringida en completa.
+        respuesta = Response(status=status.HTTP_204_NO_CONTENT)
+        poner_cookies_de_sesion(respuesta, emitir_tokens(cuenta, request.alcance))
+        rotate_token(request._request)
+        return respuesta
 
 
 class VistaYo(APIView):
