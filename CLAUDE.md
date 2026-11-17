@@ -58,14 +58,17 @@ aulaconecta-notia/
 Estos comandos son los previstos; actualízalos aquí si cambian al implementar la Fase 0.
 
 ```powershell
-# Base de datos local
-docker compose up -d
+# Base de datos local. --env-file es obligatorio: de backend/.env salen las contraseñas.
+# El contenedor recibe solo las suyas (no las llaves de Django) y crea los roles con backend/db/roles.sql.
+docker compose --env-file backend/.env up -d
 
 # Backend (desde backend/)
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements/dev.txt
-python manage.py migrate
+# Las migraciones se ejecutan con el rol dueño del esquema (notia_owner)
+$env:DB_ROL = 'owner'; python manage.py migrate; Remove-Item Env:DB_ROL
+# La aplicación corre con el rol de privilegios mínimos (notia_app)
 python manage.py runserver
 pytest
 ruff check .

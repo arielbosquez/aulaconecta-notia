@@ -9,9 +9,10 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && node scripts/hash-csp.mjs",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\""
   },
   "dependencies": {
     "@astrojs/svelte": "9.1.6",

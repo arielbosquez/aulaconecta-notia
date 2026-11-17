@@ -1,30 +1,26 @@
 """Configuración de producción (Azure App Service).
 
-Las variables obligatorias se leen con ``os.environ[...]`` para que el
-arranque falle de inmediato si falta alguna, en vez de seguir con un valor
-inseguro.
+Las variables obligatorias ya se exigieron en ``base`` (``config.entorno``
+detiene el arranque si falta alguna). Aquí se agregan las comprobaciones y
+los ajustes que solo valen en producción.
 """
 
-import os
+from apps.core.llaves import validar_llaves
+from config.entorno import leer_opcion
 
 from .base import *  # noqa: F403
-from .base import DATABASES
+from .base import DATABASES, JWT_SIGNING_KEY, MFA_ENCRYPTION_KEY, SECRET_KEY
 
 DEBUG = False
 
-SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
+# Llaves largas, con el formato correcto y distintas entre sí.
+validar_llaves(secreta=SECRET_KEY, jwt=JWT_SIGNING_KEY, mfa=MFA_ENCRYPTION_KEY)
 
-ALLOWED_HOSTS = [host.strip() for host in os.environ["ALLOWED_HOSTS"].split(",") if host.strip()]
-
-CSRF_TRUSTED_ORIGINS = [
-    origen.strip()
-    for origen in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
-    if origen.strip()
-]
-
-# La base de datos de producción exige contraseña y conexión cifrada.
-DATABASES["default"]["PASSWORD"] = os.environ["DB_PASSWORD"]
-DATABASES["default"]["OPTIONS"]["sslmode"] = "require"
+# La conexión a la base de datos siempre va cifrada: no se acepta un modo
+# que permita caer a texto plano.
+DATABASES["default"]["OPTIONS"]["sslmode"] = leer_opcion(
+    "DB_SSLMODE", opciones=("require", "verify-ca", "verify-full"), defecto="require"
+)
 
 # HTTPS obligatorio. App Service termina TLS y avisa con esta cabecera.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
