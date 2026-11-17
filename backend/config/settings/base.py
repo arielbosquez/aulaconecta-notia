@@ -5,9 +5,18 @@ variables de entorno, leídas con ``config.entorno``: si falta una variable
 obligatoria en producción, el arranque se detiene.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
-from config.entorno import cargar_archivo_env, es_produccion, leer, leer_lista, leer_opcion
+from config.entorno import (
+    cargar_archivo_env,
+    es_produccion,
+    leer,
+    leer_entero,
+    leer_lista,
+    leer_opcion,
+)
+from config.sesion import RUTA_COOKIE_REFRESCO, nombres_de_cookies
 
 # Carpeta backend/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -26,6 +35,13 @@ MFA_ENCRYPTION_KEY = leer("MFA_ENCRYPTION_KEY", obligatoria=True)
 DEBUG = False
 
 ALLOWED_HOSTS = leer_lista("ALLOWED_HOSTS", obligatoria=True)
+
+# Cuántos proxies propios hay delante de Django. De eso depende qué entrada
+# de X-Forwarded-For es la IP real del cliente (ver apps/core/red.py).
+# En local no hay ninguno; en Azure App Service hay uno.
+PROXIES_DE_CONFIANZA = leer_entero(
+    "PROXIES_DE_CONFIANZA", defecto=1 if es_produccion() else 0, minimo=0, maximo=5
+)
 CSRF_TRUSTED_ORIGINS = leer_lista("CSRF_TRUSTED_ORIGINS")
 
 # Django solo expone la API REST: no se instalan el admin, las sesiones,
@@ -34,6 +50,8 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "rest_framework",
+    # Lista negra de tokens de refresco ya rotados o cerrados.
+    "rest_framework_simplejwt.token_blacklist",
     "apps.core",
     "apps.cuentas",
     "apps.academico",
@@ -88,9 +106,22 @@ DATABASES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Contraseñas solo con Argon2id (RS-01). No hay otro algoritmo en la lista:
+# una contraseña guardada con un hash más débil no se aceptaría.
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.Argon2PasswordHasher"]
+
+# Largo mínimo por rol. Las variables de entorno permiten exigir más, nunca menos.
+PASSWORD_LARGO_MINIMO_ALUMNO = leer_entero("PASSWORD_LARGO_MINIMO_ALUMNO", defecto=10, minimo=10)
+PASSWORD_LARGO_MINIMO_PERSONAL = leer_entero(
+    "PASSWORD_LARGO_MINIMO_PERSONAL", defecto=12, minimo=12
+)
+
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "OPTIONS": {"user_attributes": ("correo", "nombres", "apellidos")},
+    },
+    {"NAME": "apps.cuentas.validadores.LargoMinimoPorRol"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
@@ -109,13 +140,45 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 # genera frontend/scripts/hash-csp.mjs y el middleware los lee al arrancar.
 CSP_ARCHIVO_HASHES = BASE_DIR.parent / "frontend" / "csp-hashes.json"
 
+# --- Sesiones: JWT en cookies (sección 8.1) ---
+# Token de acceso corto y token de refresco de una jornada escolar. Al
+# renovar, el refresco se cambia por uno nuevo y el anterior queda en la
+# lista negra. Se firman con una llave propia, distinta de SECRET_KEY.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(hours=8),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": JWT_SIGNING_KEY,
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "sub",
+    "UPDATE_LAST_LOGIN": False,
+}
+
+# Los tokens viajan solo en cookies HttpOnly, Secure y SameSite=Strict: el
+# JavaScript nunca los ve. Los nombres llevan prefijo en producción.
+_COOKIES = nombres_de_cookies(produccion=es_produccion())
+COOKIE_ACCESO = _COOKIES["acceso"]
+COOKIE_REFRESCO = _COOKIES["refresco"]
+COOKIE_REFRESCO_RUTA = RUTA_COOKIE_REFRESCO
+
+# El token CSRF sí lo lee el JavaScript (para enviarlo en X-CSRFToken), pero
+# tampoco viaja a otros sitios.
+CSRF_COOKIE_SAMESITE = "Strict"
+CSRF_COOKIE_HTTPONLY = False
+
 # La API responde solo JSON y niega el acceso por omisión: cada vista debe
-# declarar sus permisos. La autenticación por cookies se agrega en la Fase 1.
+# declarar sus permisos.
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    # Sesión por cookie, con CSRF exigido en los métodos que modifican datos.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.cuentas.autenticacion.AutenticacionPorCookie"],
+    # Por omisión se exige una sesión completa: sin 2FA ni cambio de
+    # contraseña pendientes. Lo que una sesión restringida puede usar se
+    # declara vista por vista.
+    "DEFAULT_PERMISSION_CLASSES": ["apps.cuentas.permisos.SesionCompleta"],
     # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
     "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",
 }

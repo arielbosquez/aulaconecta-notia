@@ -198,3 +198,38 @@ def test_produccion_exige_conexion_cifrada_a_la_base():
     resultado = _check_deploy(variables)
     assert resultado.returncode != 0
     assert "DB_SSLMODE" in resultado.stderr
+
+
+def ajustes_de_produccion(nombres: list[str], **variables_extra: str) -> list[str]:
+    """Arranca Django con la configuración de producción y devuelve esos ajustes."""
+    variables = _entorno_de_produccion()
+    variables.update(variables_extra)
+    programa = (
+        "import sys; from django.conf import settings; "
+        "print('\\n'.join(str(getattr(settings, nombre)) for nombre in sys.argv[1:]))"
+    )
+    resultado = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", programa, *nombres],
+        cwd=BACKEND,
+        env=variables,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert resultado.returncode == 0, resultado.stderr
+    return resultado.stdout.split()
+
+
+def test_produccion_confia_en_un_solo_proxy_y_se_puede_configurar():
+    # Azure App Service pone un proxy delante de la aplicación.
+    assert ajustes_de_produccion(["PROXIES_DE_CONFIANZA"]) == ["1"]
+    assert ajustes_de_produccion(["PROXIES_DE_CONFIANZA"], PROXIES_DE_CONFIANZA="2") == ["2"]
+
+
+def test_el_numero_de_proxies_debe_ser_un_entero_razonable():
+    variables = _entorno_de_produccion()
+    variables["PROXIES_DE_CONFIANZA"] = "muchos"
+    resultado = _check_deploy(variables)
+    assert resultado.returncode != 0
+    assert "PROXIES_DE_CONFIANZA" in resultado.stderr

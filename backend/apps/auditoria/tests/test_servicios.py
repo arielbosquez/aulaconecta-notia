@@ -106,9 +106,17 @@ def test_origen_usa_la_ip_de_la_conexion_y_recorta_el_navegador():
             HTTP_X_FORWARDED_FOR="198.51.100.99",
         )
     )
-    # La cabecera X-Forwarded-For la escribe el cliente: no se usa.
+    # Sin proxy de confianza, la cabecera X-Forwarded-For no se usa.
     assert ip == "203.0.113.7"
     assert navegador == "N" * 200
+
+
+def test_origen_detras_del_proxy_usa_la_entrada_que_agrego_el_proxy(settings):
+    settings.PROXIES_DE_CONFIANZA = 1
+    ip, _ = origen_de(
+        _peticion(REMOTE_ADDR="10.0.0.5", HTTP_X_FORWARDED_FOR="198.51.100.99, 203.0.113.7:51234")
+    )
+    assert ip == "203.0.113.7"
 
 
 @pytest.mark.parametrize("direccion", ["", "no-es-una-ip", "203.0.113.7; DROP TABLE"])

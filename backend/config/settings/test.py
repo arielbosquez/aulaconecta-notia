@@ -3,6 +3,7 @@
 from apps.core.llaves import nueva_llave_fernet, nueva_llave_secreta
 
 from .base import *  # noqa: F403
+from .base import SIMPLE_JWT
 
 DEBUG = False
 
@@ -13,3 +14,4 @@ ALLOWED_HOSTS = ["testserver", "localhost"]
 SECRET_KEY = nueva_llave_secreta()
 JWT_SIGNING_KEY = nueva_llave_secreta()
 MFA_ENCRYPTION_KEY = nueva_llave_fernet()
+SIMPLE_JWT["SIGNING_KEY"] = JWT_SIGNING_KEY

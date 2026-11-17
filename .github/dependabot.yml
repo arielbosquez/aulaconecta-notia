@@ -14,6 +14,13 @@ updates:
       time: "08:00"
       timezone: America/Santiago
     open-pull-requests-limit: 5
+    ignore:
+      # Django se mantiene en la serie 5.2 LTS: solo recibe parches (5.2.x).
+      # Subir de serie es una decisión del equipo, no una actualización automática.
+      - dependency-name: django
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
     groups:
       python:
         patterns: ["*"]

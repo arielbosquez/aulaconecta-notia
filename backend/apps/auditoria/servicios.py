@@ -9,13 +9,13 @@ códigos de 2FA, alternativas elegidas ni texto de preguntas. Quien llama no
 debe enviarlos; si aun así llegan en ``detalle``, se reemplazan por ``***``.
 """
 
-import ipaddress
 import re
 from typing import Any
 
 from django.db import models
 from django.http import HttpRequest
 
+from apps.core.red import ip_del_cliente
 from apps.core.registros import MASCARA, PATRON_NOMBRE_SENSIBLE, enmascarar_texto
 
 from .models import LARGO_USER_AGENT, Accion, RegistroAuditoria
@@ -60,23 +60,15 @@ def limpiar_detalle(detalle: dict | None) -> dict:
     return {str(clave): _limpiar(str(clave), valor) for clave, valor in detalle.items()}
 
 
-def _ip_valida(texto: str | None) -> str | None:
-    """Devuelve la dirección normalizada, o ``None`` si no es una dirección IP."""
-    try:
-        return str(ipaddress.ip_address((texto or "").strip()))
-    except ValueError:
-        return None
-
-
 def origen_de(peticion: HttpRequest | None) -> tuple[str | None, str]:
     """Devuelve la IP y el navegador (recortado) de una petición.
 
-    La IP es la de la conexión que recibe Django (``REMOTE_ADDR``). No se lee
-    ``X-Forwarded-For``, porque cualquier cliente puede escribir esa cabecera.
+    La IP la decide ``apps.core.red.ip_del_cliente``, que no confía en lo que
+    el navegador escriba en ``X-Forwarded-For``.
     """
     if peticion is None:
         return None, ""
-    ip = _ip_valida(peticion.META.get("REMOTE_ADDR"))
+    ip = ip_del_cliente(peticion)
     navegador = str(peticion.META.get("HTTP_USER_AGENT", ""))[:LARGO_USER_AGENT]
     return ip, navegador
 
@@ -114,7 +106,7 @@ def registrar(
     return RegistroAuditoria.objects.create(
         accion=accion,
         actor=actor,
-        # El rol se agrega al modelo Usuario en el PR 1.2; hasta entonces queda vacío.
+        # Copia del rol en este momento: si después cambia, el registro no.
         rol_actor=str(getattr(actor, "rol", "") or "")[:_LARGO_ROL],
         objeto_tipo=objeto_tipo,
         objeto_id=objeto_id,

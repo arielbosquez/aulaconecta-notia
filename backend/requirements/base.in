@@ -4,3 +4,5 @@
 django>=5.2,<5.3
 djangorestframework
 psycopg[binary,pool]
+argon2-cffi
+djangorestframework-simplejwt

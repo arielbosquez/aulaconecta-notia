@@ -4,7 +4,14 @@ from apps.core.llaves import nueva_llave_fernet, nueva_llave_secreta
 from config.entorno import leer, leer_opcion
 
 from .base import *  # noqa: F403
-from .base import ALLOWED_HOSTS, DATABASES, JWT_SIGNING_KEY, MFA_ENCRYPTION_KEY, SECRET_KEY
+from .base import (
+    ALLOWED_HOSTS,
+    DATABASES,
+    JWT_SIGNING_KEY,
+    MFA_ENCRYPTION_KEY,
+    SECRET_KEY,
+    SIMPLE_JWT,
+)
 
 DEBUG = True
 
@@ -21,6 +28,8 @@ if not JWT_SIGNING_KEY:
     JWT_SIGNING_KEY = nueva_llave_secreta()
 if not MFA_ENCRYPTION_KEY:
     MFA_ENCRYPTION_KEY = nueva_llave_fernet()
+# Los JWT se firman con la llave definitiva de este proceso.
+SIMPLE_JWT["SIGNING_KEY"] = JWT_SIGNING_KEY
 
 # La aplicación se conecta siempre como notia_app, que no puede crear tablas.
 # Las migraciones se ejecutan como notia_owner, pidiéndolo de forma explícita:
