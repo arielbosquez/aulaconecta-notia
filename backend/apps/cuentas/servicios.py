@@ -1,9 +1,12 @@
 """Reglas del inicio de sesión (CU-01, sección 8.2 de la arquitectura)."""
 
+import functools
+import secrets
 from dataclasses import dataclass
 from enum import StrEnum
 
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -86,6 +89,35 @@ def _sin_consentimiento() -> ErrorApi:
     )
 
 
+@functools.cache
+def _hash_ficticio() -> str:
+    """Hash Argon2id de una contraseña al azar que nadie conoce.
+
+    Se calcula una vez por proceso, con los mismos parámetros que los hashes
+    reales, para que comprobarlo cueste lo mismo.
+    """
+    return make_password(secrets.token_urlsafe(32))
+
+
+def _gastar_lo_mismo_que_un_hash(password: str) -> None:
+    """Ejecuta el hasher aunque no haya contra qué comparar.
+
+    Sin esto, un correo inexistente respondería en pocos milisegundos y uno
+    real tardaría lo que tarda Argon2id: la diferencia de tiempo revelaría
+    qué correos existen (RS-03).
+    """
+    check_password(password, _hash_ficticio())
+
+
+def _contrasena_correcta(usuario: Usuario, password: str) -> bool:
+    """Compara la contraseña ejecutando siempre el hasher exactamente una vez."""
+    if not usuario.has_usable_password():
+        # Django responde al instante para una contraseña no utilizable.
+        _gastar_lo_mismo_que_un_hash(password)
+        return False
+    return usuario.check_password(password)
+
+
 def _sin_bloqueo_vigente(ahora) -> Q:
     return Q(bloqueado_hasta__isnull=True) | Q(bloqueado_hasta__lte=ahora)
 
@@ -148,19 +180,28 @@ def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLog
     (el contador y el bloqueo) se confirma antes de responder con el error.
     Si todo fuera una transacción, el error la desharía y el contador nunca
     avanzaría.
+
+    Sin enumeración de usuarios (RS-03): en todos los caminos se ejecuta el
+    hasher una sola vez, y el correo inexistente, la cuenta desactivada y la
+    contraseña incorrecta responden el mismo error.
     """
-    usuario = Usuario.objects.filter(correo=normalizar_correo(correo), is_active=True).first()
+    # El hash ficticio se prepara antes de buscar al usuario: así el costo de
+    # crearlo (solo la primera vez en cada proceso) lo pagan todos por igual.
+    _hash_ficticio()
+    usuario =Usuario.objects.filter(correo=normalizar_correo(correo), is_active=True).first()
     if usuario is None:
+        # Correo inexistente o cuenta desactivada: mismo costo, mismo error.
+        _gastar_lo_mismo_que_un_hash(password)
         raise _credenciales_invalidas()
 
     if usuario.esta_bloqueado():
         # Mientras dure el bloqueo la contraseña se comprueba igual (cuesta lo
         # mismo que en los otros casos), pero no se cuenta ni deja entrar.
-        if usuario.check_password(password):
+        if _contrasena_correcta(usuario, password):
             raise _cuenta_bloqueada()
         raise _credenciales_invalidas()
 
-    if not usuario.check_password(password):
+    if not _contrasena_correcta(usuario, password):
         contar_intento_fallido(usuario)
         raise _credenciales_invalidas()
 
