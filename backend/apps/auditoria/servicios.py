@@ -114,7 +114,7 @@ def registrar(
     return RegistroAuditoria.objects.create(
         accion=accion,
         actor=actor,
-        # El rol se agrega al modelo Usuario en el PR 1.2; hasta entonces queda vacío.
+        # Copia del rol en este momento: si después cambia, el registro no.
         rol_actor=str(getattr(actor, "rol", "") or "")[:_LARGO_ROL],
         objeto_tipo=objeto_tipo,
         objeto_id=objeto_id,

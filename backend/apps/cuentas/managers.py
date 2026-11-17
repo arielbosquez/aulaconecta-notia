@@ -29,6 +29,8 @@ class UsuarioManager(BaseUserManager):
         if not password:
             raise ValueError("Un superusuario necesita contraseña.")
         campos["is_superuser"] = True
+        # El superusuario de Django es siempre un administrador de NotIA.
+        campos["rol"] = "ADMIN"
         return self._crear(correo, password, **campos)
 
     def get_by_natural_key(self, correo: str):
