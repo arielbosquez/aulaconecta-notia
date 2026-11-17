@@ -76,6 +76,11 @@ jobs:
       - name: Bandit
         run: bandit -r apps -ll
 
+      - name: pip-audit sobre las dependencias fijadas
+        # dev.txt incluye todo lo de base.txt, así que se audita lo que va a
+        # producción y también las herramientas de desarrollo.
+        run: pip-audit --require-hashes --disable-pip -r requirements/dev.txt
+
       - name: Crea los roles notia_owner y notia_app con db/roles.sql
         run: psql --host "$DB_HOST" --port "$DB_PORT" --username postgres --dbname postgres --file db/roles.sql
         env:
@@ -149,6 +154,9 @@ jobs:
       - name: Instala las dependencias exactas de package-lock.json
         run: npm ci
 
+      - name: npm audit (falla con vulnerabilidades altas o críticas)
+        run: npm audit --audit-level=high
+
       - name: ESLint
         run: npm run lint
 
@@ -160,3 +168,24 @@ jobs:
 
       - name: Build de Astro y cálculo de los hashes de CSP
         run: npm run build
+
+  secretos:
+    name: Secretos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Descarga el código con todo el historial
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gitleaks sobre todo el historial
+        # Imagen oficial de gitleaks, fijada por su digest. El repositorio se
+        # monta en solo lectura y los hallazgos se muestran sin el secreto.
+        run: >-
+          docker run --rm --volume "$GITHUB_WORKSPACE:/repo:ro"
+          "$IMAGEN_GITLEAKS"
+          git /repo --config /repo/.gitleaks.toml --redact --no-banner --verbose
+        env:
+          IMAGEN_GITLEAKS: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f

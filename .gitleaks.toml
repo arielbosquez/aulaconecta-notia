@@ -1,0 +1,26 @@
+# NotIA · Configuración de gitleaks (escaneo de secretos, RS-14)
+#
+# Usa todas las reglas que trae gitleaks. Las excepciones de abajo son falsos
+# positivos revisados uno por uno: cada una apunta a un archivo y a un texto
+# exactos, para que no oculte nada más. Antes de agregar otra, confirma que el
+# valor es ficticio y explica por qué en "description".
+title = "NotIA"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Valores ficticios con los que se prueba que el filtro de registros enmascara secretos"
+condition = "AND"
+paths = ['''^backend/apps/core/tests/test_registros\.py$''']
+regexes = [
+  '''^valor-ficticio-123$''',
+  '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJkZW1vIn0\.firma-ficticia$''',
+]
+
+[[allowlists]]
+description = "No es una llave: es el argumento obligatoria=... con que se lee AZURE_SPEECH_KEY del entorno"
+condition = "AND"
+regexTarget = "line"
+paths = ['''^backend/config/settings/base\.py$''']
+regexes = ['''AZURE_SPEECH_KEY = leer\("AZURE_SPEECH_KEY", obligatoria=PROVEEDOR_VOZ == "azure"\)''']
