@@ -9,9 +9,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
+from apps.auditoria.models import Accion
+from apps.auditoria.servicios import registrar
 from apps.core.csrf import exigir_csrf
 
 from .cookies import borrar_cookies_de_sesion, poner_cookies_de_sesion
@@ -127,6 +129,72 @@ class VistaRefresh(APIView):
         )
         borrar_cookies_de_sesion(respuesta)
         return respuesta
+
+
+class VistaLogout(APIView):
+    """CU-03: cierra la sesión de este navegador.
+
+    Pone el token de refresco en la lista negra y borra las dos cookies. Las
+    demás sesiones del usuario siguen abiertas: para cerrarlas todas está el
+    cambio de contraseña (o, en la Fase 4, el administrador).
+
+    No exige un token de acceso vigente: dura solo 5 minutos y cerrar sesión
+    debe funcionar igual con uno vencido. Basta con la cookie de refresco, o
+    con ninguna (entonces solo se borran las cookies). Sí exige CSRF, para
+    que otro sitio no pueda cerrar la sesión de nadie.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        exigir_csrf(request)
+        usuario = self._anular_refresco(request.COOKIES.get(settings.COOKIE_REFRESCO))
+        if usuario is None:
+            usuario = self._usuario_del_acceso(request.COOKIES.get(settings.COOKIE_ACCESO))
+        if usuario is not None:
+            registrar(Accion.LOGOUT, actor=usuario, peticion=request)
+
+        respuesta = Response(status=status.HTTP_204_NO_CONTENT)
+        borrar_cookies_de_sesion(respuesta)
+        # El token CSRF de la sesión que termina no se reutiliza.
+        rotate_token(request._request)
+        return respuesta
+
+    @staticmethod
+    @transaction.atomic
+    def _anular_refresco(crudo: str | None):
+        """Pone el refresco en la lista negra y devuelve a su dueño, o ``None``."""
+        if not crudo:
+            return None
+        try:
+            refresco = RefreshToken(crudo)
+        except TokenError:
+            # Vencido, falso o ya anulado: no hay nada que cerrar.
+            return None
+        # Mismo bloqueo que la renovación: un logout y un refresh simultáneos
+        # con el mismo token se ordenan y no chocan al escribir la lista negra.
+        # Si el refresh llega primero, su par nuevo queda vivo en ese
+        # navegador; cerrar todas las sesiones es tarea del cambio de
+        # contraseña.
+        emitido = (
+            OutstandingToken.objects.select_for_update()
+            .filter(jti=refresco[api_settings.JTI_CLAIM])
+            .first()
+        )
+        if emitido is None or BlacklistedToken.objects.filter(token=emitido).exists():
+            return None
+        BlacklistedToken.objects.create(token=emitido)
+        return usuario_del_token(refresco)
+
+    @staticmethod
+    def _usuario_del_acceso(crudo: str | None):
+        if not crudo:
+            return None
+        try:
+            return usuario_del_token(AccessToken(crudo))
+        except TokenError:
+            return None
 
 
 class VistaYo(APIView):
