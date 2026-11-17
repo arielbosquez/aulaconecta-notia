@@ -122,8 +122,25 @@ def _sin_bloqueo_vigente(ahora) -> Q:
     return Q(bloqueado_hasta__isnull=True) | Q(bloqueado_hasta__lte=ahora)
 
 
+def _registrar_fallo(motivo: str, *, usuario: Usuario | None, peticion, **detalle) -> None:
+    """Deja un LOGIN_FALLIDO en la bitácora.
+
+    El actor queda vacío: con la contraseña incorrecta no se sabe quién hizo
+    el intento. La cuenta atacada, si existe, queda como el objeto. Nunca se
+    guarda la contraseña escrita ni el correo de un intento con un correo
+    inexistente (a veces la persona escribe su contraseña en el campo del
+    correo).
+    """
+    registrar(
+        Accion.LOGIN_FALLIDO,
+        peticion=peticion,
+        objeto=usuario,
+        detalle={"motivo": motivo, **detalle},
+    )
+
+
 @transaction.atomic
-def contar_intento_fallido(usuario: Usuario) -> IntentoFallido:
+def contar_intento_fallido(usuario: Usuario, *, peticion=None) -> IntentoFallido:
     """Suma una contraseña incorrecta a la cuenta y la bloquea al llegar al límite.
 
     Es a prueba de peticiones simultáneas: la fila del usuario se bloquea
@@ -134,6 +151,9 @@ def contar_intento_fallido(usuario: Usuario) -> IntentoFallido:
 
     Al bloquear, el contador vuelve a cero: cuando el bloqueo vence, la cuenta
     tiene de nuevo 5 intentos.
+
+    El contador, el bloqueo y sus registros en la bitácora se confirman en la
+    misma transacción: no puede quedar uno sin el otro.
     """
     fila = Usuario.objects.select_for_update().values("intentos_fallidos", "bloqueado_hasta")
     actual = fila.get(pk=usuario.pk)
@@ -142,14 +162,24 @@ def contar_intento_fallido(usuario: Usuario) -> IntentoFallido:
     if actual["bloqueado_hasta"] is not None and actual["bloqueado_hasta"] > ahora:
         # Otra petición la bloqueó mientras esta calculaba el hash. El
         # bloqueo ya corre: este intento no lo alarga ni suma.
+        _registrar_fallo("cuenta_bloqueada", usuario=usuario, peticion=peticion)
         return IntentoFallido(
             intentos=actual["intentos_fallidos"], bloqueo_iniciado=False, ya_estaba_bloqueada=True
         )
 
     intentos = actual["intentos_fallidos"] + 1
+    _registrar_fallo(
+        "credenciales", usuario=usuario, peticion=peticion, intentos_fallidos=intentos
+    )
     if intentos >= settings.LOGIN_INTENTOS_ANTES_DE_BLOQUEAR:
-        Usuario.objects.filter(pk=usuario.pk).update(
-            intentos_fallidos=0, bloqueado_hasta=ahora + settings.LOGIN_DURACION_DEL_BLOQUEO
+        hasta = ahora + settings.LOGIN_DURACION_DEL_BLOQUEO
+        Usuario.objects.filter(pk=usuario.pk).update(intentos_fallidos=0, bloqueado_hasta=hasta)
+        # Lo hace el sistema, no una persona: sin actor.
+        registrar(
+            Accion.CUENTA_BLOQUEADA,
+            peticion=peticion,
+            objeto=usuario,
+            detalle={"intentos_fallidos": intentos, "bloqueado_hasta": hasta.isoformat()},
         )
         return IntentoFallido(intentos=intentos, bloqueo_iniciado=True, ya_estaba_bloqueada=False)
 
@@ -188,26 +218,36 @@ def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLog
     # El hash ficticio se prepara antes de buscar al usuario: así el costo de
     # crearlo (solo la primera vez en cada proceso) lo pagan todos por igual.
     _hash_ficticio()
-    usuario =Usuario.objects.filter(correo=normalizar_correo(correo), is_active=True).first()
+    usuario = Usuario.objects.filter(correo=normalizar_correo(correo), is_active=True).first()
     if usuario is None:
         # Correo inexistente o cuenta desactivada: mismo costo, mismo error.
         _gastar_lo_mismo_que_un_hash(password)
+        _registrar_fallo("credenciales", usuario=None, peticion=peticion)
         raise _credenciales_invalidas()
 
     if usuario.esta_bloqueado():
         # Mientras dure el bloqueo la contraseña se comprueba igual (cuesta lo
         # mismo que en los otros casos), pero no se cuenta ni deja entrar.
-        if _contrasena_correcta(usuario, password):
+        correcta = _contrasena_correcta(usuario, password)
+        _registrar_fallo("cuenta_bloqueada", usuario=usuario, peticion=peticion)
+        if correcta:
             raise _cuenta_bloqueada()
         raise _credenciales_invalidas()
 
     if not _contrasena_correcta(usuario, password):
-        contar_intento_fallido(usuario)
+        contar_intento_fallido(usuario, peticion=peticion)
         raise _credenciales_invalidas()
 
     # Solo después de comprobar la contraseña: así este mensaje no le confirma
     # a un extraño que el correo existe.
     if usuario.rol == Rol.ALUMNO and not usuario.tiene_consentimiento:
+        # La contraseña era correcta: aquí sí se sabe quién intentó entrar.
+        registrar(
+            Accion.LOGIN_FALLIDO,
+            actor=usuario,
+            peticion=peticion,
+            detalle={"motivo": "sin_consentimiento"},
+        )
         raise _sin_consentimiento()
 
     with transaction.atomic():
