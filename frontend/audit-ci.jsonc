@@ -1,0 +1,9 @@
+{
+  "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
+  // Falla con cualquier vulnerabilidad alta o crítica que no esté en la lista.
+  "high": true,
+  "allowlist": [
+    // picomatch (transitiva de Astro, Vite y typescript-eslint, solo en desarrollo y build) sin versión corregida aún.
+    "GHSA-fc5q-39xc-vjpf"
+  ]
+}

@@ -1,4 +1,4 @@
-"""Reglas del inicio de sesión (CU-01, sección 8.2 de la arquitectura)."""
+"""Reglas del inicio de sesión (CU-01, sección 8.2) y del cambio de contraseña (CU-04)."""
 
 import functools
 import secrets
@@ -7,10 +7,13 @@ from enum import StrEnum
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 
 from apps.auditoria.models import Accion
 from apps.auditoria.servicios import registrar
@@ -136,8 +139,13 @@ def _registrar_fallo(motivo: str, *, usuario: Usuario | None, peticion, **detall
 
 
 @transaction.atomic
-def contar_intento_fallido(usuario: Usuario, *, peticion=None) -> IntentoFallido:
+def contar_intento_fallido(
+    usuario: Usuario, *, peticion=None, motivo: str = "credenciales"
+) -> IntentoFallido:
     """Suma una contraseña incorrecta a la cuenta y la bloquea al llegar al límite.
+
+    Cuentan tanto los fallos del login como los de la contraseña actual al
+    cambiarla: ``motivo`` distingue unos de otros en la bitácora.
 
     Es a prueba de peticiones simultáneas: la fila del usuario se bloquea
     (``SELECT … FOR UPDATE``) y el contador se lee de la base, no del objeto
@@ -164,9 +172,7 @@ def contar_intento_fallido(usuario: Usuario, *, peticion=None) -> IntentoFallido
         )
 
     intentos = actual["intentos_fallidos"] + 1
-    _registrar_fallo(
-        "credenciales", usuario=usuario, peticion=peticion, intentos_fallidos=intentos
-    )
+    _registrar_fallo(motivo, usuario=usuario, peticion=peticion, intentos_fallidos=intentos)
     if intentos >= settings.LOGIN_INTENTOS_ANTES_DE_BLOQUEAR:
         hasta = ahora + settings.LOGIN_DURACION_DEL_BLOQUEO
         Usuario.objects.filter(pk=usuario.pk).update(intentos_fallidos=0, bloqueado_hasta=hasta)
@@ -263,3 +269,85 @@ def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLog
                 detalle={"sesion": "restringida", "pendiente": "enrolar_mfa"},
             )
     return ResultadoLogin(usuario=usuario, paso=_PASO_POR_ALCANCE[alcance], alcance=alcance)
+
+
+# --- Cambio de contraseña (CU-04) ----------------------------------------------
+
+MENSAJE_CONTRASENA_ACTUAL_INCORRECTA = (
+    "La contraseña actual no es correcta, o la cuenta está bloqueada temporalmente. "
+    "Intenta de nuevo en unos minutos."
+)
+
+
+def _password_actual_incorrecta() -> ErrorApi:
+    # 400 y no 401: la sesión sí es válida, y un 401 haría que el navegador
+    # intentara renovarla. Durante el bloqueo responde lo mismo (sin oráculo).
+    return ErrorApi(
+        "password_actual_incorrecta",
+        MENSAJE_CONTRASENA_ACTUAL_INCORRECTA,
+        estado=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _validar_password_nueva(usuario: Usuario, actual: str, nueva: str) -> None:
+    """Aplica la política de contraseñas (RS-01) a la contraseña nueva."""
+    errores = []
+    if nueva == actual:
+        errores.append("La contraseña nueva debe ser distinta de la actual.")
+    try:
+        validate_password(nueva, user=usuario)
+    except DjangoValidationError as error:
+        errores.extend(error.messages)
+    if errores:
+        raise ValidationError({"password_nueva": errores})
+
+
+def cambiar_password(usuario: Usuario, *, actual: str, nueva: str, peticion=None) -> Usuario:
+    """Cambia la contraseña de quien tiene la sesión abierta.
+
+    Exige la contraseña actual aunque la sesión sea válida: quien encuentre
+    un computador con la sesión abierta no puede cambiarla y quedarse con la
+    cuenta. Cada contraseña actual incorrecta suma al bloqueo igual que en el
+    login, así la sesión tampoco sirve para adivinarla. Durante el bloqueo no
+    se compara con la real.
+
+    Es la salida de la contraseña temporal: deja ``debe_cambiar_password`` en
+    ``False``. Cierra todas las sesiones de la cuenta; la vista le entrega a
+    este navegador un par de tokens nuevo. Devuelve el usuario actualizado.
+    """
+    _hash_ficticio()
+    if usuario.esta_bloqueado():
+        _gastar_lo_mismo_que_un_hash(actual)
+        _registrar_fallo("cuenta_bloqueada", usuario=usuario, peticion=peticion)
+        raise _password_actual_incorrecta()
+
+    if not _contrasena_correcta(usuario, actual):
+        contar_intento_fallido(usuario, peticion=peticion, motivo="password_actual_incorrecta")
+        raise _password_actual_incorrecta()
+
+    _validar_password_nueva(usuario, actual, nueva)
+
+    with transaction.atomic():
+        cuenta = Usuario.objects.select_for_update().get(pk=usuario.pk)
+        cuenta.set_password(nueva)
+        cuenta.debe_cambiar_password = False
+        cuenta.intentos_fallidos = 0
+        # Sube version_sesion: todos los tokens emitidos antes (los de este
+        # navegador y los de cualquier otro) dejan de valer de inmediato. Si
+        # alguien más conocía la contraseña anterior, pierde su sesión.
+        cuenta.cerrar_todas_las_sesiones()
+        cuenta.save(
+            update_fields=[
+                "password",
+                "debe_cambiar_password",
+                "intentos_fallidos",
+                "version_sesion",
+            ]
+        )
+        registrar(
+            Accion.PASSWORD_CAMBIADA,
+            actor=cuenta,
+            peticion=peticion,
+            detalle={"sesiones_cerradas": True},
+        )
+    return cuenta

@@ -80,7 +80,7 @@ npm ci
 npm run dev
 npm run build
 npm run lint
-npm audit --audit-level=high
+npx --no-install audit-ci --config audit-ci.jsonc
 ```
 
 ## Lo que no haces
