@@ -16,7 +16,7 @@ from apps.auditoria.servicios import registrar
 from apps.core.errores import ErrorApi
 
 from .managers import normalizar_correo
-from .models import Usuario
+from .models import Rol, Usuario
 
 
 class Paso(StrEnum):
@@ -43,6 +43,16 @@ def _credenciales_invalidas() -> ErrorApi:
     )
 
 
+def _sin_consentimiento() -> ErrorApi:
+    # Ley 21.719: la cuenta de un alumno no se usa hasta que el administrador
+    # registre que el colegio tiene el consentimiento del apoderado.
+    return ErrorApi(
+        "cuenta_no_habilitada",
+        "Tu cuenta aún no está habilitada. Consulta en el colegio.",
+        estado=status.HTTP_403_FORBIDDEN,
+    )
+
+
 def _paso_siguiente(usuario: Usuario) -> Paso:
     """Docentes y administradores nunca quedan listos solo con la contraseña."""
     if not usuario.es_del_personal:
@@ -59,6 +69,11 @@ def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLog
     usuario = Usuario.objects.filter(correo=normalizar_correo(correo), is_active=True).first()
     if usuario is None or not usuario.check_password(password):
         raise _credenciales_invalidas()
+
+    # Solo después de comprobar la contraseña: así este mensaje no le confirma
+    # a un extraño que el correo existe.
+    if usuario.rol == Rol.ALUMNO and not usuario.tiene_consentimiento:
+        raise _sin_consentimiento()
 
     paso = _paso_siguiente(usuario)
     if paso is Paso.LISTO:
