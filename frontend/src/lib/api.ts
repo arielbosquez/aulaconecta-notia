@@ -50,6 +50,11 @@ export class ErrorApi extends Error {
   errorDe(campo: string): string | undefined {
     return this.#porCampo.get(campo)?.[0];
   }
+
+  /** Todos los mensajes de error de un campo, unidos en una frase. */
+  erroresDe(campo: string): string | undefined {
+    return this.#porCampo.get(campo)?.join(' ');
+  }
 }
 
 interface Opciones {
