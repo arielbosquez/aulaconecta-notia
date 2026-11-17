@@ -5,6 +5,7 @@ variables de entorno, leídas con ``config.entorno``: si falta una variable
 obligatoria en producción, el arranque se detiene.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 from config.entorno import (
@@ -15,6 +16,7 @@ from config.entorno import (
     leer_lista,
     leer_opcion,
 )
+from config.sesion import RUTA_COOKIE_REFRESCO, nombres_de_cookies
 
 # Carpeta backend/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -41,6 +43,8 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "rest_framework",
+    # Lista negra de tokens de refresco ya rotados o cerrados.
+    "rest_framework_simplejwt.token_blacklist",
     "apps.core",
     "apps.cuentas",
     "apps.academico",
@@ -129,12 +133,41 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 # genera frontend/scripts/hash-csp.mjs y el middleware los lee al arrancar.
 CSP_ARCHIVO_HASHES = BASE_DIR.parent / "frontend" / "csp-hashes.json"
 
+# --- Sesiones: JWT en cookies (sección 8.1) ---
+# Token de acceso corto y token de refresco de una jornada escolar. Al
+# renovar, el refresco se cambia por uno nuevo y el anterior queda en la
+# lista negra. Se firman con una llave propia, distinta de SECRET_KEY.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(hours=8),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": JWT_SIGNING_KEY,
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "sub",
+    "UPDATE_LAST_LOGIN": False,
+}
+
+# Los tokens viajan solo en cookies HttpOnly, Secure y SameSite=Strict: el
+# JavaScript nunca los ve. Los nombres llevan prefijo en producción.
+_COOKIES = nombres_de_cookies(produccion=es_produccion())
+COOKIE_ACCESO = _COOKIES["acceso"]
+COOKIE_REFRESCO = _COOKIES["refresco"]
+COOKIE_REFRESCO_RUTA = RUTA_COOKIE_REFRESCO
+
+# El token CSRF sí lo lee el JavaScript (para enviarlo en X-CSRFToken), pero
+# tampoco viaja a otros sitios.
+CSRF_COOKIE_SAMESITE = "Strict"
+CSRF_COOKIE_HTTPONLY = False
+
 # La API responde solo JSON y niega el acceso por omisión: cada vista debe
-# declarar sus permisos. La autenticación por cookies se agrega en la Fase 1.
+# declarar sus permisos.
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    # Sesión por cookie, con CSRF exigido en los métodos que modifican datos.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.cuentas.autenticacion.AutenticacionPorCookie"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
     "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",

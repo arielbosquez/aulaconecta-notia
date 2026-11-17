@@ -72,7 +72,8 @@ def test_error_de_negocio_muestra_su_codigo_y_mensaje(cliente):
         ("/api/no-encontrado-django", 404, "no_encontrado"),
         ("/api/ruta-que-no-existe", 404, "no_encontrado"),
         ("/api/denegado-django", 403, "sin_permiso"),
-        ("/api/protegida", 403, "sin_permiso"),
+        # Sin sesión: la autenticación por cookie responde 401, no 403.
+        ("/api/protegida", 401, "no_autenticado"),
         ("/api/servicio", 500, "error_interno"),
     ],
 )

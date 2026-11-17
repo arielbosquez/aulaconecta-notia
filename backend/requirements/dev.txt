@@ -516,9 +516,17 @@ django==5.2.19 \
     #   -c requirements/base.txt
     #   -r requirements/base.in
     #   djangorestframework
+    #   djangorestframework-simplejwt
 djangorestframework==3.18.3 \
     --hash=sha256:446a9b352e7eff630421ab3f2328bd2401b109a9470afa4a31189994911ed030 \
     --hash=sha256:8544bb674846731b1e3c9b309236ee1dc412905a0aa725be2ec193ca950a7d12
+    # via
+    #   -c requirements/base.txt
+    #   -r requirements/base.in
+    #   djangorestframework-simplejwt
+djangorestframework-simplejwt==5.5.1 \
+    --hash=sha256:2c30f3707053d384e9f315d11c2daccfcb548d4faa453111ca19a542b732e469 \
+    --hash=sha256:e72c5572f51d7803021288e2057afcbd03f17fe11d484096f40a460abc76e87f
     # via
     #   -c requirements/base.txt
     #   -r requirements/base.in
@@ -794,6 +802,12 @@ pygments==2.21.0 \
     # via
     #   pytest
     #   rich
+pyjwt==2.15.1 \
+    --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
+    --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
+    # via
+    #   -c requirements/base.txt
+    #   djangorestframework-simplejwt
 pyparsing==3.3.3 \
     --hash=sha256:928ae7e20211f3b6f3915a72f06a0cfd29ab9d24279dd6346b6b1a7146397d36 \
     --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4
