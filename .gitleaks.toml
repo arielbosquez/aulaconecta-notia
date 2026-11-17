@@ -10,9 +10,12 @@ title = "NotIA"
 useDefault = true
 
 [[allowlists]]
-description = "Valores ficticios con los que se prueba que el filtro de registros enmascara secretos"
+description = "Valores ficticios con los que se prueba que los registros y la bitácora enmascaran secretos"
 condition = "AND"
-paths = ['''^backend/apps/core/tests/test_registros\.py$''']
+paths = [
+  '''^backend/apps/core/tests/test_registros\.py$''',
+  '''^backend/apps/auditoria/tests/test_servicios\.py$''',
+]
 regexes = [
   '''^valor-ficticio-123$''',
   '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJkZW1vIn0\.firma-ficticia$''',
