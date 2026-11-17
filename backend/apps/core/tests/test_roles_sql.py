@@ -1,14 +1,17 @@
-"""Revisión estática de backend/db/roles.sql y docker-compose.yml (RS-14 y RS-19).
+"""Revisión estática de backend/db/ y docker-compose.yml (RS-14 y RS-19).
 
-Los permisos reales de notia_app se prueban contra PostgreSQL cuando existe
-la bitácora (Fase 1). Aquí se cuida que los archivos no retrocedan.
+Los permisos reales de notia_app se prueban contra PostgreSQL en
+``test_permisos_bd.py``. Aquí se cuida que los archivos no retrocedan.
 """
 
 import re
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[4]
-ROLES = (RAIZ / "backend" / "db" / "roles.sql").read_text(encoding="utf-8")
+CREACION = (RAIZ / "backend" / "db" / "roles.sql").read_text(encoding="utf-8")
+PERMISOS = (RAIZ / "backend" / "db" / "permisos" / "base_de_datos.sql").read_text(encoding="utf-8")
+# roles.sql incluye el archivo de permisos: se revisan como un solo script.
+ROLES = f"{CREACION}\n{PERMISOS}"
 COMPOSE = (RAIZ / "docker-compose.yml").read_text(encoding="utf-8")
 
 # El script sin comentarios, en mayúsculas, para revisar solo las sentencias.
@@ -45,6 +48,17 @@ def test_la_bitacora_queda_sin_update_ni_delete():
         "REVOKE UPDATE, DELETE, TRUNCATE ON PUBLIC.AUDITORIA_REGISTROAUDITORIA FROM NOTIA_APP"
         in SENTENCIAS
     )
+
+
+def test_roles_sql_incluye_los_permisos_dentro_de_una_transaccion():
+    assert "BEGIN;\n\\ir permisos/base_de_datos.sql\nCOMMIT;\n" in CREACION
+
+
+def test_los_permisos_son_sql_puro():
+    # La base de pruebas los ejecuta sin psql: no pueden llevar comandos con
+    # barra invertida ni variables de psql.
+    assert not re.search(r"(?m)^\s*\\", PERMISOS)
+    assert not re.search(r":['\"]\w+['\"]", PERMISOS)
 
 
 def test_sin_triggers_ni_jobs_en_la_base():
@@ -88,4 +102,6 @@ def test_docker_compose_no_trae_contrasenas_escritas():
 
 def test_docker_compose_solo_escucha_en_local_y_crea_los_roles():
     assert '"127.0.0.1:${DB_PORT:-5432}:5432"' in COMPOSE
-    assert "roles.sql:/docker-entrypoint-initdb.d/" in COMPOSE
+    assert "./backend/db/roles.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro" in COMPOSE
+    # La carpeta queda donde roles.sql la busca con \ir, y en solo lectura.
+    assert "./backend/db/permisos:/docker-entrypoint-initdb.d/permisos:ro" in COMPOSE

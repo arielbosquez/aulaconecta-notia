@@ -31,7 +31,7 @@ jobs:
       run:
         working-directory: backend
     env:
-      DB_HOST: localhost
+      DB_HOST: 127.0.0.1
       DB_PORT: "5432"
       DB_NAME: notia
       # Valores de prueba (ver la nota del inicio). Letras, números y guiones
@@ -95,13 +95,10 @@ jobs:
         run: python manage.py makemigrations --check --dry-run
 
       - name: Pytest con cobertura
+        # Las pruebas se conectan como notia_app, igual que la aplicación. El
+        # superusuario del contenedor solo crea y borra la base test_notia, y
+        # notia_owner la migra (ver backend/conftest.py).
         run: pytest --cov --cov-report=
-        env:
-          # Las pruebas crean y borran su propia base (test_notia), y los roles
-          # de NotIA no pueden crear bases. Por eso se conectan con el
-          # superusuario de este contenedor, que se descarta al terminar.
-          DB_USER: postgres
-          DB_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
 
       - name: Cobertura mínima del 85% en cuentas, rendicion y resultados
         run: |

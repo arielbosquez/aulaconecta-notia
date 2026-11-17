@@ -32,6 +32,9 @@ services:
       # Se ejecuta una sola vez, al crear el volumen: crea la base y los roles
       # notia_owner y notia_app con privilegios mínimos.
       - ./backend/db/roles.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
+      # roles.sql incluye los permisos de esta carpeta. Al ser una carpeta, el
+      # arranque de PostgreSQL no la ejecuta por su cuenta.
+      - ./backend/db/permisos:/docker-entrypoint-initdb.d/permisos:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready --username=postgres --dbname=postgres"]
       interval: 5s

@@ -134,6 +134,8 @@ python manage.py runserver
 
 Son los mismos comandos que ejecuta el CI. Córrelos antes de abrir un pull request.
 
+Las pruebas que usan la base necesitan PostgreSQL levantado (`docker compose --env-file backend/.env up -d`). Crean y borran su propia base, `test_notia`, sin tocar tus datos de desarrollo, y se conectan como `notia_app`, el mismo rol de privilegios mínimos que usa la aplicación. Si `pytest` tarda varios segundos por prueba, revisa que en tu `backend/.env` diga `DB_HOST=127.0.0.1` y no `localhost`.
+
 ```powershell
 # Backend (desde backend/, con el entorno virtual activado)
 pytest --cov

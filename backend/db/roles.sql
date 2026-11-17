@@ -16,6 +16,8 @@
 -- Requiere psql 15 o superior (por \getenv). Se puede volver a ejecutar sin
 -- problemas: actualiza las contraseñas y repone los permisos.
 --
+-- Necesita el archivo permisos/base_de_datos.sql, que está junto a este script.
+--
 -- Sin triggers ni jobs: aquí solo hay roles y permisos.
 
 \set ON_ERROR_STOP on
@@ -69,47 +71,11 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'nombre_bd') \gexec
 
 \connect :"nombre_bd"
 
+-- ---------------------------------------------------------------------------
+-- 3. Permisos dentro de la base: esquema, tablas, secuencias, funciones y
+--    bitácora. Están en un archivo aparte, de SQL puro, porque la base de
+--    pruebas recibe exactamente los mismos (ver backend/conftest.py).
+-- ---------------------------------------------------------------------------
 BEGIN;
-
--- Nadie entra a la base por el solo hecho de existir en el servidor.
-REVOKE ALL ON DATABASE :"nombre_bd" FROM PUBLIC;
-GRANT CONNECT ON DATABASE :"nombre_bd" TO notia_app;
-
--- ---------------------------------------------------------------------------
--- 3. Esquema: notia_owner es el dueño; notia_app solo lo usa.
--- ---------------------------------------------------------------------------
-ALTER SCHEMA public OWNER TO notia_owner;
-REVOKE ALL ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA public TO notia_app;
-
--- ---------------------------------------------------------------------------
--- 4. Permisos de notia_app sobre lo que cree notia_owner con las migraciones.
---    Solo filas: SELECT, INSERT, UPDATE y DELETE. Sin TRUNCATE, REFERENCES ni
---    TRIGGER, y sin CREATE en el esquema.
--- ---------------------------------------------------------------------------
-ALTER DEFAULT PRIVILEGES FOR ROLE notia_owner IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO notia_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE notia_owner IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO notia_app;
-
--- Las funciones (por ejemplo fn_calcular_resultado) no quedan ejecutables
--- por cualquiera: solo por notia_app.
-ALTER DEFAULT PRIVILEGES FOR ROLE notia_owner
-    REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE notia_owner IN SCHEMA public
-    GRANT EXECUTE ON FUNCTIONS TO notia_app;
-
--- Lo mismo para los objetos que ya existan (cuando el script se vuelve a ejecutar).
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO notia_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO notia_app;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO notia_app;
-
--- ---------------------------------------------------------------------------
--- 5. Bitácora de auditoría: solo inserción y lectura (RS-16).
---    La tabla se crea en la Fase 1; su migración quita UPDATE y DELETE a
---    notia_app. Aquí se repite por si el script se ejecuta con la tabla ya creada.
--- ---------------------------------------------------------------------------
-SELECT 'REVOKE UPDATE, DELETE, TRUNCATE ON public.auditoria_registroauditoria FROM notia_app'
-WHERE to_regclass('public.auditoria_registroauditoria') IS NOT NULL \gexec
-
+\ir permisos/base_de_datos.sql
 COMMIT;
