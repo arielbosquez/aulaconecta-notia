@@ -151,8 +151,8 @@ jobs:
       - name: Instala las dependencias exactas de package-lock.json
         run: npm ci
 
-      - name: npm audit (falla con vulnerabilidades altas o críticas)
-        run: npm audit --audit-level=high
+      - name: audit-ci (falla con vulnerabilidades altas o críticas, salvo las de audit-ci.jsonc)
+        run: npx --no-install audit-ci --config audit-ci.jsonc
 
       - name: ESLint
         run: npm run lint
