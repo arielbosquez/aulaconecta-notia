@@ -218,6 +218,11 @@ LOGGING = {
 # --- Cuentas ---
 DOMINIO_INSTITUCIONAL = leer("DOMINIO_INSTITUCIONAL", defecto="aulaconecta.cl").lower()
 
+# Bloqueo por intentos fallidos (sección 8.1, RS-02): 5 contraseñas
+# incorrectas seguidas bloquean la cuenta por 15 minutos.
+LOGIN_INTENTOS_ANTES_DE_BLOQUEAR = 5
+LOGIN_DURACION_DEL_BLOQUEO = timedelta(minutes=15)
+
 # --- Voz ---
 # "prueba" genera audios sintéticos sin red; "azure" usa Azure AI Speech.
 PROVEEDOR_VOZ = leer_opcion("PROVEEDOR_VOZ", opciones=("azure", "prueba"), defecto="prueba")
