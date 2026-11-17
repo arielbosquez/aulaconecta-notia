@@ -19,6 +19,7 @@ from apps.core.csrf import exigir_csrf
 
 from .cookies import borrar_cookies_de_sesion, poner_cookies_de_sesion
 from .limites import LimiteDeLoginPorIp
+from .mfa import iniciar_enrolamiento
 from .models import Usuario
 from .serializadores import SerializadorCambioPassword, SerializadorLogin
 from .servicios import Paso, cambiar_password, iniciar_sesion
@@ -271,6 +272,20 @@ class VistaCambiarPassword(APIView):
         poner_cookies_de_sesion(respuesta, emitir_tokens(cuenta, request.alcance))
         rotate_token(request._request)
         return respuesta
+
+
+class VistaEnrolarMfa(APIView):
+    """Inicia la activación del 2FA: entrega el QR y el secreto (RS-06).
+
+    La puede usar la sesión restringida a enrolar el 2FA (y una completa del
+    personal que aún no lo tenga). Exige haber cambiado antes la contraseña
+    temporal.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        return Response(iniciar_enrolamiento(request.user))
 
 
 class VistaYo(APIView):

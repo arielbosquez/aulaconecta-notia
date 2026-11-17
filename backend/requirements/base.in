@@ -6,3 +6,8 @@ djangorestframework
 psycopg[binary,pool]
 argon2-cffi
 djangorestframework-simplejwt
+# 2FA (PR 1.5): códigos TOTP, QR en SVG generado en el servidor y cifrado
+# del secreto con Fernet.
+pyotp
+segno
+cryptography
