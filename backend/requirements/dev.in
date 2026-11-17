@@ -5,6 +5,7 @@
 pytest
 pytest-django
 pytest-cov
+time-machine
 ruff
 bandit
 pip-audit
