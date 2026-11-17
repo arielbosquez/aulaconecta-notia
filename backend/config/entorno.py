@@ -86,3 +86,20 @@ def leer_opcion(
             f"La variable de entorno {nombre} debe ser una de: {', '.join(permitidas)}."
         )
     return valor
+
+
+def leer_entero(nombre: str, *, defecto: int, minimo: int = 0, maximo: int | None = None) -> int:
+    """Lee una variable numérica entera dentro de un rango permitido."""
+    texto = leer(nombre)
+    if not texto:
+        return defecto
+    try:
+        valor = int(texto)
+    except ValueError:
+        valor = None
+    if valor is None or valor < minimo or (maximo is not None and valor > maximo):
+        rango = f"entre {minimo} y {maximo}" if maximo is not None else f"mayor o igual a {minimo}"
+        raise ImproperlyConfigured(
+            f"La variable de entorno {nombre} debe ser un número entero {rango}."
+        )
+    return valor

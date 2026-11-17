@@ -7,7 +7,14 @@ obligatoria en producción, el arranque se detiene.
 
 from pathlib import Path
 
-from config.entorno import cargar_archivo_env, es_produccion, leer, leer_lista, leer_opcion
+from config.entorno import (
+    cargar_archivo_env,
+    es_produccion,
+    leer,
+    leer_entero,
+    leer_lista,
+    leer_opcion,
+)
 
 # Carpeta backend/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -88,9 +95,22 @@ DATABASES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Contraseñas solo con Argon2id (RS-01). No hay otro algoritmo en la lista:
+# una contraseña guardada con un hash más débil no se aceptaría.
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.Argon2PasswordHasher"]
+
+# Largo mínimo por rol. Las variables de entorno permiten exigir más, nunca menos.
+PASSWORD_LARGO_MINIMO_ALUMNO = leer_entero("PASSWORD_LARGO_MINIMO_ALUMNO", defecto=10, minimo=10)
+PASSWORD_LARGO_MINIMO_PERSONAL = leer_entero(
+    "PASSWORD_LARGO_MINIMO_PERSONAL", defecto=12, minimo=12
+)
+
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "OPTIONS": {"user_attributes": ("correo", "nombres", "apellidos")},
+    },
+    {"NAME": "apps.cuentas.validadores.LargoMinimoPorRol"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
