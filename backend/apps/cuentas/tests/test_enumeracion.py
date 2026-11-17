@@ -55,6 +55,9 @@ def _preparar(caso: str, alumno) -> tuple[str, str]:
     if caso == "bloqueada_con_contrasena_incorrecta":
         _bloquear(alumno)
         return alumno.correo, OTRA_CLAVE
+    if caso == "bloqueada_con_contrasena_correcta":
+        _bloquear(alumno)
+        return alumno.correo, CLAVE
     raise AssertionError(caso)
 
 
@@ -64,6 +67,9 @@ CASOS_GENERICOS = [
     "contrasena_incorrecta",
     "sin_contrasena_utilizable",
     "bloqueada_con_contrasena_incorrecta",
+    # Sin esto el bloqueo sería un oráculo: se podría seguir adivinando
+    # durante los 15 minutos y reconocer el acierto por la respuesta.
+    "bloqueada_con_contrasena_correcta",
 ]
 
 
@@ -124,6 +130,38 @@ def test_con_la_cuenta_bloqueada_cualquier_contrasena_calcula_argon2id_una_sola_
     _bloquear(alumno)
     assert _contar_hashes(navegador, alumno.correo, OTRA_CLAVE) == (401, 1)
     assert _contar_hashes(navegador, alumno.correo, CLAVE) == (401, 1)
+
+
+def test_durante_el_bloqueo_la_contrasena_correcta_responde_igual_que_una_incorrecta(
+    navegador, alumno, monkeypatch
+):
+    _bloquear(alumno)
+    correcta = navegador.login(alumno.correo, CLAVE)
+    incorrecta = navegador.login(alumno.correo, OTRA_CLAVE)
+    # Mismo estado, cuerpo, cabeceras y cookies.
+    assert _huella(correcta) == _huella(incorrecta)
+    assert correcta.status_code == 401
+    assert correcta.json() == GENERICO
+    assert settings.COOKIE_ACCESO not in correcta.cookies
+
+    # Tampoco el tiempo puede delatar el acierto: durante el bloqueo el hasher
+    # se ejecuta contra el hash ficticio, nunca contra el de la cuenta.
+    hashes_usados = []
+    original = Argon2PasswordHasher.verify
+
+    def espiar(hasher, password, codificado):
+        hashes_usados.append(codificado)
+        return original(hasher, password, codificado)
+
+    monkeypatch.setattr(Argon2PasswordHasher, "verify", espiar)
+    navegador.login(alumno.correo, CLAVE)
+    navegador.login(alumno.correo, OTRA_CLAVE)
+    assert hashes_usados == [_hash_ficticio(), _hash_ficticio()]
+    assert alumno.password not in hashes_usados
+
+    # Y al vencer el bloqueo la misma contraseña sí entra: no se perdió nada.
+    Usuario.objects.filter(pk=alumno.pk).update(bloqueado_hasta=timezone.now())
+    assert navegador.login(alumno.correo, CLAVE).status_code == 200
 
 
 def test_el_hash_ficticio_es_argon2id_y_no_corresponde_a_ninguna_contrasena_conocida():
