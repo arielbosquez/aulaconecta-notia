@@ -35,6 +35,13 @@ MFA_ENCRYPTION_KEY = leer("MFA_ENCRYPTION_KEY", obligatoria=True)
 DEBUG = False
 
 ALLOWED_HOSTS = leer_lista("ALLOWED_HOSTS", obligatoria=True)
+
+# Cuántos proxies propios hay delante de Django. De eso depende qué entrada
+# de X-Forwarded-For es la IP real del cliente (ver apps/core/red.py).
+# En local no hay ninguno; en Azure App Service hay uno.
+PROXIES_DE_CONFIANZA = leer_entero(
+    "PROXIES_DE_CONFIANZA", defecto=1 if es_produccion() else 0, minimo=0, maximo=5
+)
 CSRF_TRUSTED_ORIGINS = leer_lista("CSRF_TRUSTED_ORIGINS")
 
 # Django solo expone la API REST: no se instalan el admin, las sesiones,
