@@ -68,7 +68,7 @@ TEMPLATES: list[dict] = []
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "HOST": leer("DB_HOST", defecto="localhost", obligatoria=True),
+        "HOST": leer("DB_HOST", defecto="127.0.0.1", obligatoria=True),
         "PORT": leer("DB_PORT", defecto="5432"),
         "NAME": leer("DB_NAME", defecto="notia", obligatoria=True),
         # La aplicación se conecta con el rol de privilegios mínimos.

@@ -91,7 +91,8 @@ aulaconecta-notia/
 │   │   ├── resultados/    # Resultado, función SQL de corrección, notas, exportación CSV
 │   │   ├── integridad/    # EventoIntegridad, SolicitudAlumno, alertas al docente
 │   │   └── auditoria/     # RegistroAuditoria (bitácora)
-│   ├── db/                # roles.sql (roles y permisos de PostgreSQL)
+│   ├── db/                # roles.sql (roles de PostgreSQL) y permisos/base_de_datos.sql (permisos dentro de la base)
+│   ├── conftest.py        # prepara la base de pruebas con los tres roles (sección 15)
 │   ├── requirements/ (base.in, dev.in, base.txt, dev.txt)
 │   ├── tests/carga/       # locustfile.py
 │   └── pyproject.toml     # ruff, pytest, bandit
@@ -417,7 +418,7 @@ Prefijo `/api/`. JSON con nombres en `snake_case`. Errores con forma `{"codigo":
 - Se considera producción toda configuración que no sea `config.settings.dev` ni `config.settings.test`. Solo en esas dos se carga `backend/.env` y se aceptan valores por omisión; si falta una llave, se genera una temporal que dura lo que el proceso.
 - Variables solo para el entorno local, que no existen en producción:
   - `DB_OWNER_PASSWORD`: contraseña del rol `notia_owner`. La usan `backend/db/roles.sql` al crear el rol y Django cuando se migra con `DB_ROL=owner`. Debe ser distinta de `DB_PASSWORD`.
-  - `POSTGRES_PASSWORD`: contraseña del superusuario `postgres` del contenedor de desarrollo. Django no la lee.
+  - `POSTGRES_PASSWORD`: contraseña del superusuario `postgres` del contenedor de desarrollo. Ninguna configuración de Django la lee. Solo la usa `backend/conftest.py` para crear y borrar la base de pruebas (sección 15).
   - `DB_ROL` (`app` u `owner`; por omisión `app`): solo la lee `config.settings.dev`. Con `owner`, la conexión usa `notia_owner` y `DB_OWNER_PASSWORD`, para ejecutar las migraciones (`$env:DB_ROL = 'owner'; python manage.py migrate`). No va en `backend/.env`: se define en la terminal para ese comando. En producción las migraciones reciben las credenciales de `notia_owner` directamente en `DB_USER` y `DB_PASSWORD`.
 - El contenedor local de PostgreSQL se levanta con `docker compose --env-file backend/.env up -d` y recibe por interpolación solo `POSTGRES_PASSWORD`, `DB_OWNER_PASSWORD`, `DB_PASSWORD`, `DB_NAME` y `DB_PORT`; las llaves de Django no entran al contenedor.
 - En Azure, los secretos viven en Key Vault y App Service los lee mediante referencias de Key Vault con identidad administrada. Blob Storage se accede con identidad administrada (`DefaultAzureCredential`), sin cadenas de conexión.
@@ -455,6 +456,7 @@ Prefijo `/api/`. JSON con nombres en `snake_case`. Errores con forma `{"codigo":
 
 ### 12.9 Base de datos con privilegios mínimos
 - `backend/db/roles.sql` crea dos roles: `notia_owner` (dueño del esquema; se usa solo para migraciones) y `notia_app` (el que usa la aplicación: SELECT, INSERT, UPDATE y DELETE en las tablas de la app; **solo** SELECT e INSERT en `auditoria_registroauditoria`; EXECUTE en `fn_calcular_resultado`; sin permisos para crear objetos).
+- Los permisos dentro de la base (esquema, tablas, secuencias, funciones y bitácora) están en `backend/db/permisos/base_de_datos.sql`, en SQL puro. `roles.sql` lo incluye con `\ir`, y la base de pruebas recibe ese mismo archivo, de modo que las pruebas verifican los permisos reales y no una copia.
 - `docker-compose.yml` ejecuta este script al crear la base local; las contraseñas de los roles llegan por variables de entorno (`DB_OWNER_PASSWORD` y `DB_PASSWORD`), nunca escritas en el script. En producción, la conexión exige TLS (`sslmode=require`).
 - Un comando `python manage.py purgar_bitacora --antes-de AAAA-MM-DD` borra registros antiguos de la bitácora y solo funciona con las credenciales de `notia_owner` (lo ejecuta una persona, no un job).
 
@@ -505,6 +507,8 @@ Prefijo `/api/`. JSON con nombres en `snake_case`. Errores con forma `{"codigo":
 ## 15. Pruebas y calidad
 
 - `pytest` con base PostgreSQL real (servicio de Docker en local y en CI) y cobertura mínima del 85% en `cuentas`, `rendicion` y `resultados`, y del 70% en el resto.
+- Las pruebas que usan la base se conectan como `notia_app`, igual que la aplicación, para que cualquier permiso de más o de menos se note en las pruebas. `backend/conftest.py` prepara la base `test_<DB_NAME>` repartiendo el trabajo: el superusuario del contenedor (`postgres`, con `POSTGRES_PASSWORD`) solo la crea, le aplica `db/permisos/base_de_datos.sql` y la borra al terminar; `notia_owner` ejecuta las migraciones; `notia_app` ejecuta las pruebas. Ninguna configuración de Django conoce al superusuario. Las pruebas que no usan la base corren aunque PostgreSQL esté apagado.
+- En local, `DB_HOST` es `127.0.0.1` y no `localhost`: `docker compose` publica PostgreSQL solo en esa dirección, y en Windows `localhost` intenta primero IPv6 y agrega varios segundos a cada conexión.
 - Pruebas obligatorias: todas las mencionadas en las secciones 7 a 12, más el flujo completo de CU-05 con `time-machine` (responder a tiempo, pasar y volver con el tiempo restante, tiempo agotado, desconexión, fin de ventana, reapertura, doble respuesta simultánea), cookies con sus atributos, CSRF exigido, bloqueo y desbloqueo, ausencia de enumeración, 2FA (código válido, repetido y vencido; códigos de recuperación de un solo uso), invalidación de sesiones por `version_sesion` y bitácora sin UPDATE ni DELETE con el rol `notia_app`.
 - Frontend: Vitest para `src/lib` (por ejemplo, el reloj local y la agrupación de eventos). Si alcanza el tiempo, una prueba de extremo a extremo con Playwright del flujo de rendición.
 - `backend/tests/carga/locustfile.py`: 400 alumnos simulados rindiendo a la vez. Meta: el percentil 95 bajo 3 segundos para `actual`, `responder` y `audio`.
