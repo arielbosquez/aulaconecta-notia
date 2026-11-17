@@ -29,6 +29,10 @@ const BLOQUES = new RegExp(
   'gi',
 );
 
+// Cada alternativa empieza con un carácter distinto y el nombre no admite
+// espacios, así que la expresión no puede retroceder de forma exponencial.
+// Además solo se aplica al HTML que genera nuestro propio build.
+// eslint-disable-next-line security/detect-unsafe-regex -- falso positivo, ver arriba
 const ATRIBUTO = /([^\s"'=<>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 
 // Lo que CSP no puede permitir con un hash de bloque: manejadores de eventos

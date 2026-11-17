@@ -4,7 +4,9 @@
 -c base.txt
 pytest
 pytest-django
+pytest-cov
 ruff
 bandit
 pip-audit
 pip-tools
+pre-commit

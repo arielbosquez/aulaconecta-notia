@@ -1,0 +1,191 @@
+# NotIA · Integración continua
+#
+# Se ejecuta en cada pull request y en cada push a main. Todos los pasos son
+# compuertas: si uno falla, el PR no se puede integrar.
+#
+# Las contraseñas que aparecen aquí son valores de prueba para una base de
+# datos que solo existe mientras dura el trabajo. No son secretos, no se usan
+# en ningún otro lugar y el workflow no lee secretos de GitHub.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Privilegio mínimo: el CI solo necesita leer el código.
+permissions:
+  contents: read
+
+# Un push nuevo a la misma rama cancela la ejecución anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: notia
+      # Valores de prueba (ver la nota del inicio). Letras, números y guiones
+      # bajos, como pide backend/.env.example.
+      POSTGRES_PASSWORD: solo_para_ci_postgres
+      DB_OWNER_PASSWORD: solo_para_ci_owner
+      DB_PASSWORD: solo_para_ci_app
+    services:
+      postgres:
+        # La misma imagen que docker-compose.yml.
+        image: postgres:17.12-alpine
+        env:
+          # Debe coincidir con POSTGRES_PASSWORD del trabajo: aquí no se
+          # pueden leer las variables de "env".
+          POSTGRES_PASSWORD: solo_para_ci_postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username=postgres --dbname=postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Descarga el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Instala Python 3.12
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.txt
+
+      - name: Instala las dependencias verificando sus hashes
+        run: python -m pip install --require-hashes -r requirements/dev.txt
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Bandit
+        run: bandit -r apps -ll
+
+      - name: pip-audit sobre las dependencias fijadas
+        # dev.txt incluye todo lo de base.txt, así que se audita lo que va a
+        # producción y también las herramientas de desarrollo.
+        run: pip-audit --require-hashes --disable-pip -r requirements/dev.txt
+
+      - name: Crea los roles notia_owner y notia_app con db/roles.sql
+        run: psql --host "$DB_HOST" --port "$DB_PORT" --username postgres --dbname postgres --file db/roles.sql
+        env:
+          PGPASSWORD: ${{ env.POSTGRES_PASSWORD }}
+
+      - name: Aplica las migraciones con el rol notia_owner
+        run: python manage.py migrate --no-input
+        env:
+          DB_ROL: owner
+
+      - name: Comprueba que no falten migraciones
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Pytest con cobertura
+        run: pytest --cov --cov-report=
+        env:
+          # Las pruebas crean y borran su propia base (test_notia), y los roles
+          # de NotIA no pueden crear bases. Por eso se conectan con el
+          # superusuario de este contenedor, que se descarta al terminar.
+          DB_USER: postgres
+          DB_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+
+      - name: Cobertura mínima del 85% en cuentas, rendicion y resultados
+        run: |
+          for app in cuentas rendicion resultados; do
+            echo "::group::apps/$app"
+            coverage report --include="apps/$app/*" --fail-under=85
+            echo "::endgroup::"
+          done
+
+      - name: Cobertura mínima del 70% en el resto
+        run: coverage report --omit="apps/cuentas/*,apps/rendicion/*,apps/resultados/*" --fail-under=70
+
+      - name: Revisión de despliegue con la configuración de producción
+        # Las tres llaves se generan en el momento y no salen de este paso. El
+        # resto son valores ficticios: esta revisión no se conecta a nada.
+        run: |
+          DJANGO_SECRET_KEY="$(python -c 'from apps.core.llaves import nueva_llave_secreta as nueva; print(nueva())')"
+          JWT_SIGNING_KEY="$(python -c 'from apps.core.llaves import nueva_llave_secreta as nueva; print(nueva())')"
+          MFA_ENCRYPTION_KEY="$(python -c 'from apps.core.llaves import nueva_llave_fernet as nueva; print(nueva())')"
+          export DJANGO_SECRET_KEY JWT_SIGNING_KEY MFA_ENCRYPTION_KEY
+          python manage.py check --deploy --fail-level WARNING
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.prod
+          ALLOWED_HOSTS: notia.example
+          DB_HOST: bd.example
+          DB_USER: notia_app
+          AZURE_STORAGE_ACCOUNT_NAME: cuentaficticia
+          AZURE_STORAGE_CONTAINER: privado
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Descarga el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Instala Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instala las dependencias exactas de package-lock.json
+        run: npm ci
+
+      - name: npm audit (falla con vulnerabilidades altas o críticas)
+        run: npm audit --audit-level=high
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Revisión de tipos con astro check
+        run: npm run check
+
+      - name: Pruebas del script de hashes de CSP
+        run: npm run test:scripts
+
+      - name: Build de Astro y cálculo de los hashes de CSP
+        run: npm run build
+
+  secretos:
+    name: Secretos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Descarga el código con todo el historial
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gitleaks sobre todo el historial
+        # Imagen oficial de gitleaks, fijada por su digest. El repositorio se
+        # monta en solo lectura y los hallazgos se muestran sin el secreto.
+        run: >-
+          docker run --rm --volume "$GITHUB_WORKSPACE:/repo:ro"
+          "$IMAGEN_GITLEAKS"
+          git /repo --config /repo/.gitleaks.toml --redact --no-banner --verbose
+        env:
+          IMAGEN_GITLEAKS: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f

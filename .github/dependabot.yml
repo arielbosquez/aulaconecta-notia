@@ -1,0 +1,43 @@
+# NotIA · Actualizaciones automáticas de dependencias (RS-15)
+#
+# Dependabot abre un PR por semana y por ecosistema cuando hay versiones
+# nuevas. Esos PR pasan por el mismo CI y la misma revisión que cualquier otro.
+version: 2
+
+updates:
+  # Backend: requirements/*.in y sus *.txt compilados con hashes.
+  - package-ecosystem: pip
+    directory: /backend/requirements
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Santiago
+    open-pull-requests-limit: 5
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Frontend: package.json y package-lock.json.
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Santiago
+    open-pull-requests-limit: 5
+    groups:
+      npm:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Actions de los workflows, fijadas por SHA.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Santiago

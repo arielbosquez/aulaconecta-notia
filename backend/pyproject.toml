@@ -18,5 +18,14 @@ python_files = ["test_*.py"]
 testpaths = ["apps", "tests"]
 addopts = "-ra --strict-markers"
 
+[tool.coverage.run]
+# Se mide el código de las apps. Las pruebas y las migraciones no cuentan.
+source = ["apps"]
+omit = ["*/tests/*", "*/migrations/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
 [tool.bandit]
 exclude_dirs = [".venv", "tests"]
