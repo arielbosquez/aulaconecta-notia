@@ -11,3 +11,5 @@ djangorestframework-simplejwt
 pyotp
 segno
 cryptography
+# Pantallas (PR 1.6): Django sirve el build de Astro desde el mismo origen.
+whitenoise

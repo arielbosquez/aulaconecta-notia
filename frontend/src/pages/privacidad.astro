@@ -1,0 +1,101 @@
+---
+// Aviso de privacidad en lenguaje simple, para alumnos y apoderados
+// (sección 13 de la arquitectura, Ley 21.719). Es una página pública.
+import Marca from '../components/base/Marca.svelte';
+import Base from '../layouts/Base.astro';
+---
+
+<Base titulo="Aviso de privacidad">
+  <main class="aviso">
+    <a class="volver" href="/ingresar/">Volver a ingresar</a>
+    <Marca tamano={36} />
+    <h1>Aviso de privacidad</h1>
+    <p class="entrada">
+      NotIA es el sistema de evaluaciones de AulaConecta. Aquí te contamos qué datos usa y para
+      qué.
+    </p>
+
+    <section>
+      <h2>Qué datos guardamos</h2>
+      <ul>
+        <li>Tu correo institucional, tus nombres y apellidos, tu rol y tus cursos.</li>
+        <li>Tus respuestas y resultados de las pruebas.</li>
+        <li>
+          Durante una prueba, algunos eventos: por ejemplo, si sales de la pantalla de la prueba o
+          si intentas copiar. Sirven para que tu docente sepa si hubo interrupciones; no deciden tu
+          nota por sí solos.
+        </li>
+        <li>Un registro de seguridad: cuándo ingresas o sales del sistema, y desde qué dirección.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Qué datos no guardamos</h2>
+      <p>
+        No guardamos tu RUT, tu fecha de nacimiento, datos de salud ni el motivo por el que usas una
+        modalidad de prueba distinta. Ese motivo lo conoce el colegio, fuera de este sistema.
+      </p>
+    </section>
+
+    <section>
+      <h2>Consentimiento</h2>
+      <p>
+        La cuenta de un alumno o alumna solo se activa cuando el colegio registra que tiene el
+        consentimiento de su apoderado. El documento firmado lo guarda el colegio.
+      </p>
+    </section>
+
+    <section>
+      <h2>Cuánto tiempo y quién los ve</h2>
+      <p>
+        Los eventos de las pruebas se borran 12 meses después de cerrada la evaluación, y el
+        registro de seguridad se conserva 24 meses. Tus respuestas y resultados los ven tus
+        docentes. El equipo que administra el sistema gestiona las cuentas, pero no ve tus
+        respuestas.
+      </p>
+    </section>
+
+    <section>
+      <h2>Tus derechos</h2>
+      <p>
+        Tú o tu apoderado pueden pedir al colegio una copia de tus datos o que se anonimicen. Si
+        crees que hubo un problema con tus datos, avísale al colegio.
+      </p>
+    </section>
+  </main>
+</Base>
+
+<style>
+  .aviso {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 4rem;
+    font-size: 1.0625rem;
+  }
+
+  .volver {
+    align-self: flex-start;
+  }
+
+  .entrada {
+    font-size: 1.25rem;
+  }
+
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+
+  li + li {
+    margin-top: 0.375rem;
+  }
+</style>

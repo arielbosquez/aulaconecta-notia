@@ -75,6 +75,8 @@ MIDDLEWARE = [
     # Primero, para que las cabeceras de seguridad cubran todas las respuestas.
     "apps.core.middleware.CabecerasSeguridadMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Sirve el build de Astro (las pantallas) desde el mismo origen que la API.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -157,6 +159,19 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 # Hashes SHA-256 de los scripts y estilos en línea del build de Astro. Los
 # genera frontend/scripts/hash-csp.mjs y el middleware los lee al arrancar.
 CSP_ARCHIVO_HASHES = BASE_DIR.parent / "frontend" / "csp-hashes.json"
+
+# --- Pantallas: el build de Astro (sección 3, "Mismo origen") ---
+# WhiteNoise sirve los archivos de frontend/dist en la raíz del sitio, y la
+# API queda bajo /api/. Así las cookies pueden ser SameSite=Strict y no hay
+# CORS. En el despliegue, FRONTEND_DIST apunta al dist copiado junto al
+# backend. Si la carpeta no existe (por ejemplo, en las pruebas del backend),
+# no se sirve nada y Django responde solo la API.
+FRONTEND_DIST = Path(leer("FRONTEND_DIST", defecto=str(BASE_DIR.parent / "frontend" / "dist")))
+WHITENOISE_ROOT = str(FRONTEND_DIST) if FRONTEND_DIST.is_dir() else None
+# /ingresar/ sirve ingresar/index.html, y /ingresar redirige a /ingresar/.
+WHITENOISE_INDEX_FILE = True
+# Los archivos de /_astro/ llevan un hash en el nombre: se pueden guardar para siempre.
+WHITENOISE_IMMUTABLE_FILE_TEST = r"^/_astro/"
 
 # --- Sesiones: JWT en cookies (sección 8.1) ---
 # Token de acceso corto y token de refresco de una jornada escolar. Al
