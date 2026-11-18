@@ -142,3 +142,25 @@ def bd_con_transacciones(_volver_a_notia_app, transactional_db):
     """
     yield
     _usar(connection.settings_dict["NAME"], ROL_DUENO, _variable("DB_OWNER_PASSWORD"))
+
+
+@pytest.fixture
+def usar_rol_bd():
+    """Cambia el rol de la conexión de las pruebas: ``"app"`` o ``"owner"``.
+
+    Para las pruebas con ``live_server`` (las del navegador): pytest-django
+    activa ahí ``transactional_db`` antes que cualquier otro fixture, así que
+    el orden de ``bd_con_transacciones`` no sirve. Esas pruebas corren como
+    ``notia_app`` y cambian a ``notia_owner`` solo para el vaciado final.
+    """
+
+    def usar(rol: str) -> None:
+        nombre = connection.settings_dict["NAME"]
+        if rol == "app":
+            _usar(nombre, ROL_APLICACION, _variable("DB_PASSWORD"))
+        elif rol == "owner":
+            _usar(nombre, ROL_DUENO, _variable("DB_OWNER_PASSWORD"))
+        else:
+            raise ValueError(rol)
+
+    return usar

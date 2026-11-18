@@ -16,7 +16,12 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "DJ"]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 testpaths = ["apps", "tests"]
-addopts = "-ra --strict-markers"
+# Las pruebas en el navegador (marca e2e) no corren por omisión: necesitan el
+# build del frontend y Chromium. Se ejecutan con: pytest -m e2e
+addopts = "-ra --strict-markers -m 'not e2e'"
+markers = [
+    "e2e: pantallas en un navegador real con Playwright (antes: npm run build en frontend/)",
+]
 
 [tool.coverage.run]
 # Se mide el código de las apps. Las pruebas y las migraciones no cuentan.
