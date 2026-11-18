@@ -6,3 +6,10 @@ djangorestframework
 psycopg[binary,pool]
 argon2-cffi
 djangorestframework-simplejwt
+# 2FA (PR 1.5): códigos TOTP, QR en SVG generado en el servidor y cifrado
+# del secreto con Fernet.
+pyotp
+segno
+cryptography
+# Pantallas (PR 1.6): Django sirve el build de Astro desde el mismo origen.
+whitenoise

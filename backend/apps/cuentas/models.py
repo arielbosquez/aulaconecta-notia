@@ -138,3 +138,26 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     def cerrar_todas_las_sesiones(self) -> None:
         """Invalida todos los tokens emitidos. Quien llama guarda el cambio."""
         self.version_sesion += 1
+
+
+class CodigoRecuperacion(models.Model):
+    """Código de un solo uso para entrar si se pierde el teléfono del 2FA (RS-06).
+
+    Se guarda solo su hash Argon2id: el código en texto se muestra una vez, al
+    activar el 2FA, y no queda en ninguna parte.
+    """
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="codigos_recuperacion"
+    )
+    codigo_hash = models.CharField(max_length=128)
+    usado_en = models.DateTimeField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "código de recuperación"
+        verbose_name_plural = "códigos de recuperación"
+        indexes = [models.Index(fields=["usuario", "usado_en"], name="recuperacion_por_usuario")]
+
+    def __str__(self) -> str:
+        return f"Código de recuperación de {self.usuario_id}"

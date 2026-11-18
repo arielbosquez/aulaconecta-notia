@@ -121,8 +121,15 @@ def _sin_bloqueo_vigente(ahora) -> Q:
     return Q(bloqueado_hasta__isnull=True) | Q(bloqueado_hasta__lte=ahora)
 
 
-def _registrar_fallo(motivo: str, *, usuario: Usuario | None, peticion, **detalle) -> None:
-    """Deja un LOGIN_FALLIDO en la bitácora.
+def _registrar_fallo(
+    motivo: str,
+    *,
+    usuario: Usuario | None,
+    peticion,
+    accion: Accion = Accion.LOGIN_FALLIDO,
+    **detalle,
+) -> None:
+    """Deja un intento fallido (LOGIN_FALLIDO o MFA_FALLIDO) en la bitácora.
 
     El actor queda vacío: con la contraseña incorrecta no se sabe quién hizo
     el intento. La cuenta atacada, si existe, queda como el objeto. Nunca se
@@ -130,22 +137,22 @@ def _registrar_fallo(motivo: str, *, usuario: Usuario | None, peticion, **detall
     inexistente (a veces la persona escribe su contraseña en el campo del
     correo).
     """
-    registrar(
-        Accion.LOGIN_FALLIDO,
-        peticion=peticion,
-        objeto=usuario,
-        detalle={"motivo": motivo, **detalle},
-    )
+    registrar(accion, peticion=peticion, objeto=usuario, detalle={"motivo": motivo, **detalle})
 
 
 @transaction.atomic
 def contar_intento_fallido(
-    usuario: Usuario, *, peticion=None, motivo: str = "credenciales"
+    usuario: Usuario,
+    *,
+    peticion=None,
+    motivo: str = "credenciales",
+    accion: Accion = Accion.LOGIN_FALLIDO,
 ) -> IntentoFallido:
     """Suma una contraseña incorrecta a la cuenta y la bloquea al llegar al límite.
 
     Cuentan tanto los fallos del login como los de la contraseña actual al
-    cambiarla: ``motivo`` distingue unos de otros en la bitácora.
+    cambiarla y los del segundo factor: ``motivo`` y ``accion`` los distinguen
+    en la bitácora.
 
     Es a prueba de peticiones simultáneas: la fila del usuario se bloquea
     (``SELECT … FOR UPDATE``) y el contador se lee de la base, no del objeto
@@ -166,13 +173,15 @@ def contar_intento_fallido(
     if actual["bloqueado_hasta"] is not None and actual["bloqueado_hasta"] > ahora:
         # Otra petición la bloqueó mientras esta calculaba el hash. El
         # bloqueo ya corre: este intento no lo alarga ni suma.
-        _registrar_fallo("cuenta_bloqueada", usuario=usuario, peticion=peticion)
+        _registrar_fallo("cuenta_bloqueada", usuario=usuario, peticion=peticion, accion=accion)
         return IntentoFallido(
             intentos=actual["intentos_fallidos"], bloqueo_iniciado=False, ya_estaba_bloqueada=True
         )
 
     intentos = actual["intentos_fallidos"] + 1
-    _registrar_fallo(motivo, usuario=usuario, peticion=peticion, intentos_fallidos=intentos)
+    _registrar_fallo(
+        motivo, usuario=usuario, peticion=peticion, accion=accion, intentos_fallidos=intentos
+    )
     if intentos >= settings.LOGIN_INTENTOS_ANTES_DE_BLOQUEAR:
         hasta = ahora + settings.LOGIN_DURACION_DEL_BLOQUEO
         Usuario.objects.filter(pk=usuario.pk).update(intentos_fallidos=0, bloqueado_hasta=hasta)
@@ -254,8 +263,12 @@ def iniciar_sesion(*, correo: str, password: str, peticion=None) -> ResultadoLog
         raise _sin_consentimiento()
 
     with transaction.atomic():
-        _reiniciar_intentos(usuario)
         alcance = alcance_tras_la_contrasena(usuario)
+        if alcance is not None:
+            # Con el 2FA pendiente (alcance None) el contador sigue: los
+            # códigos incorrectos suman al mismo bloqueo, y volver a escribir
+            # la contraseña no lo reinicia. Se reinicia al verificar el código.
+            _reiniciar_intentos(usuario)
         if alcance is Alcance.COMPLETA:
             usuario.ultimo_acceso = timezone.now()
             usuario.save(update_fields=["ultimo_acceso"])

@@ -16,7 +16,12 @@ from config.entorno import (
     leer_lista,
     leer_opcion,
 )
-from config.sesion import RUTA_COOKIE_REFRESCO, nombres_de_cookies
+from config.sesion import (
+    RUTA_COOKIE_REFRESCO,
+    RUTA_COOKIE_TICKET_MFA,
+    nombre_cookie_ticket_mfa,
+    nombres_de_cookies,
+)
 
 # Carpeta backend/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -70,6 +75,8 @@ MIDDLEWARE = [
     # Primero, para que las cabeceras de seguridad cubran todas las respuestas.
     "apps.core.middleware.CabecerasSeguridadMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Sirve el build de Astro (las pantallas) desde el mismo origen que la API.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -153,6 +160,19 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 # genera frontend/scripts/hash-csp.mjs y el middleware los lee al arrancar.
 CSP_ARCHIVO_HASHES = BASE_DIR.parent / "frontend" / "csp-hashes.json"
 
+# --- Pantallas: el build de Astro (sección 3, "Mismo origen") ---
+# WhiteNoise sirve los archivos de frontend/dist en la raíz del sitio, y la
+# API queda bajo /api/. Así las cookies pueden ser SameSite=Strict y no hay
+# CORS. En el despliegue, FRONTEND_DIST apunta al dist copiado junto al
+# backend. Si la carpeta no existe (por ejemplo, en las pruebas del backend),
+# no se sirve nada y Django responde solo la API.
+FRONTEND_DIST = Path(leer("FRONTEND_DIST", defecto=str(BASE_DIR.parent / "frontend" / "dist")))
+WHITENOISE_ROOT = str(FRONTEND_DIST) if FRONTEND_DIST.is_dir() else None
+# /ingresar/ sirve ingresar/index.html, y /ingresar redirige a /ingresar/.
+WHITENOISE_INDEX_FILE = True
+# Los archivos de /_astro/ llevan un hash en el nombre: se pueden guardar para siempre.
+WHITENOISE_IMMUTABLE_FILE_TEST = r"^/_astro/"
+
 # --- Sesiones: JWT en cookies (sección 8.1) ---
 # Token de acceso corto y token de refresco de una jornada escolar. Al
 # renovar, el refresco se cambia por uno nuevo y el anterior queda en la
@@ -175,6 +195,11 @@ _COOKIES = nombres_de_cookies(produccion=es_produccion())
 COOKIE_ACCESO = _COOKIES["acceso"]
 COOKIE_REFRESCO = _COOKIES["refresco"]
 COOKIE_REFRESCO_RUTA = RUTA_COOKIE_REFRESCO
+# Ticket del paso intermedio del 2FA: firmado, de 5 minutos, solo para la
+# verificación (sección 8.1).
+COOKIE_TICKET_MFA = nombre_cookie_ticket_mfa(produccion=es_produccion())
+COOKIE_TICKET_MFA_RUTA = RUTA_COOKIE_TICKET_MFA
+MFA_DURACION_DEL_TICKET = timedelta(minutes=5)
 
 # El token CSRF sí lo lee el JavaScript (para enviarlo en X-CSRFToken), pero
 # tampoco viaja a otros sitios.
@@ -194,7 +219,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["apps.cuentas.permisos.SesionCompleta"],
     # Límites de peticiones (sección 12.7). Cada vista declara el suyo; se
     # cuentan en la caché en base de datos, común a todos los workers.
-    "DEFAULT_THROTTLE_RATES": {"login": "10/min"},
+    # "mfa" se cuenta por ticket y en ventanas de 300 segundos (5 cada 5 minutos).
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "mfa": "5/300s"},
     # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
     "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",
 }

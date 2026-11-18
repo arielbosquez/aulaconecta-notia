@@ -71,6 +71,9 @@ $env:DB_ROL = 'owner'; python manage.py migrate; Remove-Item Env:DB_ROL
 # La aplicación corre con el rol de privilegios mínimos (notia_app)
 python manage.py runserver
 pytest
+# Pantallas en el navegador (Playwright): primero npm run build en frontend/
+# y una vez python -m playwright install chromium
+pytest -m e2e
 ruff check .
 bandit -r apps -ll
 pip-audit

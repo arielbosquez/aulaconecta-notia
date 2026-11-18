@@ -17,3 +17,10 @@ class SerializadorCambioPassword(SerializadorEstricto):
 
     password_actual = serializers.CharField(max_length=128, trim_whitespace=False)
     password_nueva = serializers.CharField(max_length=128, trim_whitespace=False)
+
+
+class SerializadorCodigoMfa(SerializadorEstricto):
+    """Código del segundo factor: 6 dígitos del TOTP o un código de recuperación."""
+
+    # Se ignoran los espacios que la persona copie alrededor del código.
+    codigo = serializers.CharField(max_length=20, trim_whitespace=True)

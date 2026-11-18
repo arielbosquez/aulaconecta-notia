@@ -1,17 +1,8 @@
 ---
-import EstadoBase from '../components/EstadoBase.svelte';
-import Base from '../layouts/Base.astro';
-
-const piezas = ['Astro estático', 'Islas Svelte 5', 'TypeScript estricto'] as const;
+import Inicio from '../components/acceso/Inicio.svelte';
+import Acceso from '../layouts/Acceso.astro';
 ---
 
-<Base titulo="Inicio">
-  <main>
-    <h1>NotIA</h1>
-    <p>
-      Sistema de evaluaciones de AulaConecta en el que la pregunta solo se escucha. Esta es la base
-      del proyecto: las pantallas se construyen a partir de la Fase 1.
-    </p>
-    <EstadoBase {piezas} />
-  </main>
-</Base>
+<Acceso titulo="Inicio">
+  <Inicio client:load />
+</Acceso>

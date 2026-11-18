@@ -11,3 +11,5 @@ bandit
 pip-audit
 pip-tools
 pre-commit
+# Pruebas de las pantallas en un navegador real (PR 1.6), con pytest -m e2e.
+pytest-playwright
