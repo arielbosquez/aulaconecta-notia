@@ -109,13 +109,21 @@ def en_curso(intento: Intento) -> Respuesta | None:
 
 
 def finalizar(intento: Intento, estado: str, ahora) -> None:
-    """Cierra el intento: lo que no se respondió queda sin tiempo."""
+    """Cierra el intento y calcula su resultado (regla 14).
+
+    Lo que no se respondió queda sin tiempo. La nota la calcula la función
+    de PostgreSQL y queda CALCULADA: el alumno la ve cuando el docente la
+    publica.
+    """
+    from apps.resultados.servicios import guardar_resultado
+
     intento.estado = estado
     intento.finalizado_en = ahora
     intento.save(update_fields=["estado", "finalizado_en"])
     intento.respuestas.filter(
         estado__in=(EstadoRespuesta.NO_VISTA, EstadoRespuesta.PASADA, EstadoRespuesta.EN_CURSO)
     ).update(estado=EstadoRespuesta.SIN_TIEMPO, presentada_en=None)
+    guardar_resultado(intento, ahora)
     registrar(
         Accion.INTENTO_FINALIZADO,
         actor=intento.alumno,

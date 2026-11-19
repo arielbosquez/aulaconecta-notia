@@ -10,6 +10,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("api/auth/", include("apps.cuentas.urls")),
     path("api/alumno/", include("apps.voz.urls")),
     path("api/alumno/", include("apps.rendicion.urls")),
+    path("api/alumno/", include("apps.resultados.urls")),
 ]
 
 # Errores que Django resuelve fuera de una vista (ruta inexistente, fallo
