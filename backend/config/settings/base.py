@@ -270,6 +270,11 @@ DOMINIO_INSTITUCIONAL = leer("DOMINIO_INSTITUCIONAL", defecto="aulaconecta.cl").
 LOGIN_INTENTOS_ANTES_DE_BLOQUEAR = 5
 LOGIN_DURACION_DEL_BLOQUEO = timedelta(minutes=15)
 
+# --- Rendición (sección 7.1) ---
+# Segundos de gracia por la latencia de la red: una respuesta enviada justo
+# antes de que se acabe el tiempo llega un poco después y se acepta igual.
+RENDICION_TOLERANCIA_SEGUNDOS = 2
+
 # --- Voz ---
 # "prueba" genera audios sintéticos sin red; "azure" usa Azure AI Speech.
 PROVEEDOR_VOZ = leer_opcion("PROVEEDOR_VOZ", opciones=("azure", "prueba"), defecto="prueba")

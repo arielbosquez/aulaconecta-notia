@@ -60,7 +60,9 @@ def _validar(serializador, peticion) -> dict:
 
 
 def _respuesta_de(estado: motor.Estado, ahora) -> Response:
-    restante = motor.restante(estado.respuesta, ahora) if estado.respuesta else None
+    restante = None
+    if estado.respuesta is not None:
+        restante = motor.restante_para_mostrar(estado.intento, estado.respuesta, ahora)
     return Response(estado_para_alumno(estado.intento, estado.respuesta, restante))
 
 
@@ -95,8 +97,16 @@ class VistaEvaluacionesDelAlumno(VistaAlumno):
             for intento in Intento.objects.filter(
                 alumno=request.user,
                 evaluacion_id__in=[asignacion.evaluacion_id for asignacion in asignaciones],
-            )
+            ).select_related("evaluacion")
         }
+        # Un intento que quedó abierto después del fin de la ventana se cierra
+        # aquí (regla 10): la lista nunca muestra "en curso" una prueba vencida.
+        for evaluacion_id, intento in list(intentos.items()):
+            if intento.en_curso and ahora > intento.evaluacion.fin:
+                consulta = Intento.objects.filter(pk=intento.pk, alumno=request.user)
+                intentos[evaluacion_id] = motor.operar(
+                    consulta, lambda bloqueado: motor.sincronizar(bloqueado, ahora)
+                ).intento
         resultados = []
         for asignacion in asignaciones:
             evaluacion = asignacion.evaluacion

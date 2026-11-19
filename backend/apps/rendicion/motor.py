@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import transaction
 from rest_framework import status
 
@@ -31,6 +32,13 @@ class PreguntaNoDisponible(ErrorApi):
             "pregunta_no_disponible",
             "La pregunta ya no está disponible.",
             estado=status.HTTP_409_CONFLICT,
+        )
+
+
+class TiempoAgotado(ErrorApi):
+    def __init__(self):
+        super().__init__(
+            "tiempo_agotado", "Se acabó el tiempo.", estado=status.HTTP_409_CONFLICT
         )
 
 
@@ -68,6 +76,21 @@ def restante(respuesta: Respuesta, ahora) -> Decimal:
     return Decimal(respuesta.pregunta.tiempo_segundos) - respuesta.segundos_usados - tramo
 
 
+def tolerancia() -> Decimal:
+    """Segundos de gracia por la latencia de la red (regla 6, ``RENDICION_TOLERANCIA_SEGUNDOS``)."""
+    return Decimal(settings.RENDICION_TOLERANCIA_SEGUNDOS)
+
+
+def restante_para_mostrar(intento: Intento, respuesta: Respuesta, ahora) -> Decimal:
+    """Lo que el temporizador del alumno debe mostrar.
+
+    Es el tiempo de la pregunta, salvo que la ventana de la prueba termine
+    antes: entonces manda el fin de la ventana.
+    """
+    hasta_el_fin = segundos(intento.evaluacion.fin - ahora)
+    return max(Decimal(0), min(restante(respuesta, ahora), hasta_el_fin))
+
+
 def _cerrar_tramo(respuesta: Respuesta, ahora) -> None:
     """Suma el tramo en curso a ``segundos_usados``, sin pasarse del tiempo total."""
     if respuesta.presentada_en is not None:
@@ -101,6 +124,38 @@ def finalizar(intento: Intento, estado: str, ahora) -> None:
     )
 
 
+def sincronizar(intento: Intento, ahora, *, gracia: Decimal = Decimal(0)) -> None:
+    """Pone el intento al día con la hora del servidor (sección 7.3).
+
+    No hay jobs que cierren intentos vencidos: cada petición que toca un
+    intento lo sincroniza primero.
+
+    - Si la ventana de la prueba terminó, la pregunta en curso se cierra con
+      el tiempo usado hasta el fin de la ventana y el intento queda EXPIRADO.
+    - Si a la pregunta en curso se le acabó el tiempo (más la ``gracia``, que
+      solo usan responder y pasar), queda SIN_TIEMPO.
+
+    Si el alumno se desconectó, el tiempo siguió corriendo: al volver, esto
+    deja todo como si nunca se hubiera ido.
+    """
+    if not intento.en_curso:
+        return
+    fin = intento.evaluacion.fin
+    actual = en_curso(intento)
+    if ahora > fin:
+        if actual is not None:
+            _cerrar_tramo(actual, min(ahora, fin))
+            actual.estado = EstadoRespuesta.SIN_TIEMPO
+            actual.save(update_fields=["estado", "segundos_usados", "presentada_en"])
+        finalizar(intento, EstadoIntento.EXPIRADO, ahora)
+        return
+    if actual is not None and restante(actual, ahora) <= -gracia:
+        actual.segundos_usados = Decimal(actual.pregunta.tiempo_segundos)
+        actual.presentada_en = None
+        actual.estado = EstadoRespuesta.SIN_TIEMPO
+        actual.save(update_fields=["estado", "segundos_usados", "presentada_en"])
+
+
 def presentar(intento: Intento, ahora, *, despues_de: int | None = None) -> Respuesta | None:
     """La pregunta en curso; si no hay, presenta la siguiente que corresponda.
 
@@ -111,6 +166,7 @@ def presentar(intento: Intento, ahora, *, despues_de: int | None = None) -> Resp
       repite de inmediato mientras haya otras esperando.
     - Si no queda ninguna, el intento termina solo.
     """
+    sincronizar(intento, ahora)
     if not intento.en_curso:
         return None
     actual = en_curso(intento)
@@ -141,9 +197,17 @@ def presentar(intento: Intento, ahora, *, despues_de: int | None = None) -> Resp
     return siguiente
 
 
-def _respuesta_en_curso(intento: Intento, ref) -> Respuesta:
-    """La respuesta ``ref`` del intento, si es la que está en curso."""
+def _respuesta_en_curso(intento: Intento, ref, ahora, *, gracia: Decimal) -> Respuesta:
+    """La respuesta ``ref`` del intento, si sigue en curso a esta hora.
+
+    Primero sincroniza con la ``gracia`` indicada: si a la pregunta se le
+    acabó el tiempo, queda SIN_TIEMPO (y eso se guarda) y se rechaza con
+    "Se acabó el tiempo".
+    """
+    sincronizar(intento, ahora, gracia=gracia)
     respuesta = _respuestas(intento).filter(pk=ref).first()
+    if respuesta is not None and respuesta.estado == EstadoRespuesta.SIN_TIEMPO:
+        raise TiempoAgotado()
     if not intento.en_curso or respuesta is None or respuesta.estado != EstadoRespuesta.EN_CURSO:
         raise PreguntaNoDisponible()
     return respuesta
@@ -152,10 +216,12 @@ def _respuesta_en_curso(intento: Intento, ref) -> Respuesta:
 def responder(intento: Intento, ref, alternativa_id, ahora) -> Respuesta | None:
     """Guarda la alternativa elegida y presenta la siguiente pregunta.
 
-    Solo la pregunta en curso y solo con una alternativa de esa pregunta.
-    Una respuesta dada no se cambia: la pregunta deja de estar en curso.
+    Solo la pregunta en curso, solo con una alternativa de esa pregunta y
+    solo si no se acabó su tiempo, con ``tolerancia()`` segundos de gracia
+    por la latencia. Una respuesta dada no se cambia: la pregunta deja de
+    estar en curso.
     """
-    respuesta = _respuesta_en_curso(intento, ref)
+    respuesta = _respuesta_en_curso(intento, ref, ahora, gracia=tolerancia())
     if str(alternativa_id) not in respuesta.orden_alternativas:
         raise AlternativaInvalida()
     _cerrar_tramo(respuesta, ahora)
@@ -169,8 +235,12 @@ def responder(intento: Intento, ref, alternativa_id, ahora) -> Respuesta | None:
 
 
 def pasar(intento: Intento, ref, ahora) -> Respuesta | None:
-    """Deja la pregunta para después, con el tiempo que le quedaba."""
-    respuesta = _respuesta_en_curso(intento, ref)
+    """Deja la pregunta para después, con el tiempo que le quedaba.
+
+    Con la misma gracia que responder. Si al cerrar el tramo ya no le queda
+    tiempo, no vuelve en la ronda 2: queda SIN_TIEMPO.
+    """
+    respuesta = _respuesta_en_curso(intento, ref, ahora, gracia=tolerancia())
     _cerrar_tramo(respuesta, ahora)
     agotada = respuesta.segundos_usados >= respuesta.pregunta.tiempo_segundos
     respuesta.estado = EstadoRespuesta.SIN_TIEMPO if agotada else EstadoRespuesta.PASADA
@@ -180,7 +250,7 @@ def pasar(intento: Intento, ref, ahora) -> Respuesta | None:
 
 def contar_repeticion(intento: Intento, ref, ahora) -> None:
     """Suma una repetición del audio de la pregunta en curso (regla 12)."""
-    respuesta = _respuesta_en_curso(intento, ref)
+    respuesta = _respuesta_en_curso(intento, ref, ahora, gracia=Decimal(0))
     respuesta.repeticiones_audio += 1
     respuesta.save(update_fields=["repeticiones_audio"])
 
