@@ -114,3 +114,32 @@ def registrar(
         user_agent=navegador,
         detalle=limpiar_detalle(detalle),
     )
+
+
+# Un mismo usuario, por un mismo motivo, deja como máximo un registro por minuto.
+SEGUNDOS_ENTRE_ACCESOS_DENEGADOS = 60
+
+
+def registrar_acceso_denegado(
+    peticion: HttpRequest, *, motivo: str, objeto_tipo: str = ""
+) -> RegistroAuditoria | None:
+    """Deja un ``ACCESO_DENEGADO`` en la bitácora, con límite de frecuencia (sección 10).
+
+    Un alumno que pide el intento de un compañero, o que llama a un endpoint
+    de docente, queda registrado una vez por minuto y por motivo aunque lo
+    intente mil veces: así no se puede inundar la bitácora. La marca vive en
+    la caché en base de datos, común a todos los workers.
+
+    Devuelve el registro, o ``None`` si se omitió por el límite.
+    """
+    from django.core.cache import cache
+
+    usuario = getattr(peticion, "user", None)
+    actor = usuario if getattr(usuario, "is_authenticated", False) else None
+    marca = f"acceso_denegado:{getattr(actor, 'pk', 'anonimo')}:{motivo}:{objeto_tipo}"
+    if not cache.add(marca, True, timeout=SEGUNDOS_ENTRE_ACCESOS_DENEGADOS):
+        return None
+    detalle = {"motivo": motivo, "ruta": getattr(peticion, "path", "")[:200]}
+    if objeto_tipo:
+        detalle["objeto_tipo"] = objeto_tipo
+    return registrar(Accion.ACCESO_DENEGADO, actor=actor, peticion=peticion, detalle=detalle)

@@ -16,8 +16,19 @@ JWT_SIGNING_KEY = nueva_llave_secreta()
 MFA_ENCRYPTION_KEY = nueva_llave_fernet()
 SIMPLE_JWT["SIGNING_KEY"] = JWT_SIGNING_KEY
 
+# Las pruebas nunca llaman a Azure, aunque el backend/.env del integrante diga
+# PROVEEDOR_VOZ=azure: siempre usan el proveedor sin red, y la llave de Azure
+# ni siquiera queda en la configuración del proceso de pruebas.
+PROVEEDOR_VOZ = "prueba"
+AZURE_SPEECH_KEY = ""
+AZURE_SPEECH_REGION = ""
+
 # El servidor de las pruebas en el navegador (live_server) revisa STATIC_URL
 # para decidir qué rutas son archivos estáticos de Django. El proyecto no usa
 # django.contrib.staticfiles (las pantallas las sirve WhiteNoise desde
 # WHITENOISE_ROOT), así que basta con un prefijo que nadie usa.
 STATIC_URL = "/_estaticos_de_pruebas/"
+
+# Audios e imágenes en memoria: las pruebas no dejan archivos en el disco.
+_EN_MEMORIA = {"BACKEND": "apps.core.almacenamiento.AlmacenamientoEnMemoria"}
+STORAGES = {"default": _EN_MEMORIA, "privado": _EN_MEMORIA}

@@ -88,3 +88,21 @@ class LimiteDeVerificacionMfa(SimpleRateThrottle):
         else:
             ident = f"ip:{identificador_de_red(ip_del_cliente(request))}"
         return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
+class LimitePorUsuario(SimpleRateThrottle):
+    """300 peticiones por minuto por usuario (``DEFAULT_THROTTLE_RATES["usuario"]``).
+
+    Es el límite general de la API (sección 12.7): sobra para rendir una
+    prueba con calma, pero frena un script que martille los endpoints.
+    """
+
+    scope = "usuario"
+
+    def get_cache_key(self, request, view):
+        usuario = getattr(request, "user", None)
+        if usuario is not None and usuario.is_authenticated:
+            ident = f"usuario:{usuario.pk}"
+        else:
+            ident = f"ip:{identificador_de_red(ip_del_cliente(request))}"
+        return self.cache_format % {"scope": self.scope, "ident": ident}

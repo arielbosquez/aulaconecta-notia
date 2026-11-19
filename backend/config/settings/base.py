@@ -220,7 +220,8 @@ REST_FRAMEWORK = {
     # Límites de peticiones (sección 12.7). Cada vista declara el suyo; se
     # cuentan en la caché en base de datos, común a todos los workers.
     # "mfa" se cuenta por ticket y en ventanas de 300 segundos (5 cada 5 minutos).
-    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "mfa": "5/300s"},
+    # "usuario" es el límite general por persona de los endpoints de la aplicación.
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "mfa": "5/300s", "usuario": "300/min"},
     # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
     "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",
 }
@@ -254,6 +255,10 @@ LOGGING = {
         "django.server": {"handlers": [], "level": "INFO", "propagate": True},
         # Nunca se registran las consultas SQL: llevan datos de las personas.
         "django.db.backends": {"level": "WARNING"},
+        # Cada llamada a Azure AI Speech no necesita una línea; los fallos los
+        # registra apps/voz/azure.py, sin la llave ni el texto.
+        "httpx": {"level": "WARNING"},
+        "httpcore": {"level": "WARNING"},
     },
 }
 
@@ -264,6 +269,11 @@ DOMINIO_INSTITUCIONAL = leer("DOMINIO_INSTITUCIONAL", defecto="aulaconecta.cl").
 # incorrectas seguidas bloquean la cuenta por 15 minutos.
 LOGIN_INTENTOS_ANTES_DE_BLOQUEAR = 5
 LOGIN_DURACION_DEL_BLOQUEO = timedelta(minutes=15)
+
+# --- Rendición (sección 7.1) ---
+# Segundos de gracia por la latencia de la red: una respuesta enviada justo
+# antes de que se acabe el tiempo llega un poco después y se acepta igual.
+RENDICION_TOLERANCIA_SEGUNDOS = 2
 
 # --- Voz ---
 # "prueba" genera audios sintéticos sin red; "azure" usa Azure AI Speech.
@@ -277,3 +287,13 @@ VOCES_DISPONIBLES = leer_lista(
 # --- Almacenamiento privado (Blob Storage con identidad administrada) ---
 AZURE_STORAGE_ACCOUNT_NAME = leer("AZURE_STORAGE_ACCOUNT_NAME", obligatoria=True)
 AZURE_STORAGE_CONTAINER = leer("AZURE_STORAGE_CONTAINER", obligatoria=True)
+
+# Audios e imágenes de las preguntas: nunca en static ni con URL pública
+# (ver apps/core/almacenamiento.py). En local, backend/privado/ (en
+# .gitignore); producción lo cambia por el contenedor privado de Blob Storage.
+CARPETA_PRIVADA = BASE_DIR / "privado"
+_ALMACENAMIENTO_LOCAL = {
+    "BACKEND": "apps.core.almacenamiento.AlmacenamientoLocalPrivado",
+    "OPTIONS": {"location": str(CARPETA_PRIVADA)},
+}
+STORAGES = {"default": _ALMACENAMIENTO_LOCAL, "privado": _ALMACENAMIENTO_LOCAL}

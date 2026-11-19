@@ -291,6 +291,25 @@ FUNCION finalizar(intento, estado):
     guardar Resultado(CALCULADO); auditar(INTENTO_FINALIZADO)
 ```
 
+### 7.4 Precisiones de la implementación (PR 2.3)
+
+Lo que el pseudocódigo deja abierto se resolvió así, en `apps/rendicion/motor.py`:
+
+- **Tolerancia.** `sincronizar` recibe una gracia: `actual` sincroniza sin gracia, y `responder` y `pasar` con `RENDICION_TOLERANCIA_SEGUNDOS` (2, en `config/settings/base.py`). Si no, la tolerancia de la regla 6 nunca se aplicaría, porque `sincronizar` ya habría dejado la pregunta SIN_TIEMPO. Una respuesta que llega dentro de la gracia se acepta y registra como máximo `tiempo_segundos`.
+- **Un rechazo no deshace el paso del tiempo.** Las operaciones corren con el intento bloqueado (`motor.operar`). Si responder llega fuera de la tolerancia, la pregunta queda SIN_TIEMPO, eso se confirma, y recién después se responde 409 `tiempo_agotado`.
+- **Pasar sin tiempo.** Si al cerrar el tramo a la pregunta ya no le queda tiempo, queda SIN_TIEMPO en vez de PASADA: no volvería en la ronda 2.
+- **Ronda 2 en ciclo.** Después de pasar o responder en la ronda 2 se presenta la siguiente PASADA con tiempo en el orden del alumno y, si no hay, la primera. Así pasar no repite de inmediato la misma pregunta mientras haya otras esperando; si es la única que queda, vuelve.
+- **Desconexión larga.** Como en el pseudocódigo, `sincronizar` solo cierra la pregunta que estaba en curso; la siguiente se presenta con su tiempo completo cuando el alumno vuelve. Una desconexión cuesta la pregunta en curso, no todas las que habrían pasado mientras tanto.
+- **Fin de la ventana.** La pregunta en curso registra el tiempo usado solo hasta `fin`, y `restante_ms` nunca muestra más de lo que queda de la ventana. La lista de pruebas del alumno también sincroniza los intentos abiertos con la ventana vencida.
+- **Una sola pregunta en curso.** Además del bloqueo de fila, la restricción `respuesta_una_en_curso` de la base impide dos preguntas EN_CURSO en un mismo intento.
+
+### 7.5 Eventos de integridad y avisos (PR 2.5)
+
+- **Límite exacto.** Los 60 eventos por minuto se cuentan por intento en la propia tabla, con la fila del intento bloqueada: un lote que haría pasar el límite se rechaza completo con 429 (`demasiados_eventos`), aunque lleguen varios lotes a la vez. No depende de la caché.
+- **Lo decide el servidor.** El navegador solo envía `tipo` (de la lista cerrada) y `duracion_ms` opcional. La hora (`registrado_en`) y la pregunta asociada (la que está en curso) las pone el servidor. Con el intento terminado se responde 409 `intento_terminado`.
+- **Avisos sin texto.** `POST alumno/solicitudes` recibe solo `evaluacion` y `tipo`; cualquier otro campo se rechaza. Repetir un aviso que sigue pendiente devuelve el mismo (200), y la base impide dos pendientes iguales (`solicitud_pendiente_unica`).
+- **Pendiente para las pantallas (PR 2.6).** La sección 14.3 propone `navigator.sendBeacon` al ocultarse la página, pero `sendBeacon` no puede enviar la cabecera `X-CSRFToken` y la API exige CSRF en todo POST (RS-05). La alternativa es `fetch` con `keepalive: true`, que sí la envía.
+
 ---
 
 ## 8. Autenticación y sesiones (CU-01 a CU-04)
