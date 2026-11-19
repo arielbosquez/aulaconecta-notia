@@ -3,7 +3,8 @@
 La salida se arma a mano, campo por campo, a partir de una lista cerrada:
 ningún serializador de modelo copia campos por su cuenta. Así es imposible
 que ``es_correcta``, el puntaje, el identificador de la pregunta o el texto
-de la pregunta en modalidad NotIA lleguen al navegador por accidente.
+de la pregunta en modalidad NotIA lleguen al navegador por accidente. El
+texto sale solo en ``pregunta_para_alumno`` y solo en modalidad normal.
 
 Los serializadores del docente, que sí ven todo eso, van en otro módulo.
 """
@@ -14,7 +15,7 @@ from string import ascii_uppercase
 from rest_framework import serializers
 
 from apps.core.serializadores import SerializadorEstricto
-from apps.evaluaciones.models import Alternativa
+from apps.evaluaciones.models import Alternativa, Modalidad
 from apps.voz.proveedores import ErrorDeVoz, validar_voz
 
 from .models import EstadoRespuesta, Intento, Respuesta
@@ -83,10 +84,14 @@ def alternativas_para_alumno(respuesta: Respuesta) -> list[dict]:
 def pregunta_para_alumno(intento: Intento, respuesta: Respuesta, restante_s: Decimal) -> dict:
     """La pregunta en curso tal como la ve el alumno.
 
-    El ``texto`` es siempre ``None``: el alumno en NotIA solo escucha la
-    pregunta.
+    - NotIA: ``texto`` es siempre ``None`` y la pregunta llega solo como audio.
+    - Normal (CU-06): el mismo flujo, con el ``texto`` y sin audio.
+
+    La modalidad que decide es la del intento, copiada de la asignación al
+    iniciar: el navegador no puede pedir la otra.
     """
     pregunta = respuesta.pregunta
+    normal = intento.modalidad == Modalidad.NORMAL
     return {
         "ref": str(respuesta.id),
         "numero": respuesta.orden_presentacion,
@@ -94,9 +99,9 @@ def pregunta_para_alumno(intento: Intento, respuesta: Respuesta, restante_s: Dec
         "tiempo_total_ms": pregunta.tiempo_segundos * 1000,
         "restante_ms": _milisegundos(restante_s),
         "alternativas": alternativas_para_alumno(respuesta),
-        "audio_url": f"/api/alumno/respuestas/{respuesta.id}/audio",
+        "audio_url": None if normal else f"/api/alumno/respuestas/{respuesta.id}/audio",
         "imagen_url": f"/api/alumno/respuestas/{respuesta.id}/imagen" if pregunta.imagen else None,
-        "texto": None,
+        "texto": pregunta.texto if normal else None,
     }
 
 
