@@ -2,7 +2,8 @@
 
 Un alumno rinde una evaluación completa en modalidad NotIA, como lo haría
 desde el navegador: inicia sesión, revisa sus pruebas, escucha las muestras
-de voz, empieza, escucha cada pregunta, pasa una, cambia la voz, se equivoca
+de voz, avisa al docente, empieza, escucha cada pregunta, registra eventos
+de integridad, pasa una, cambia la voz, se equivoca
 de petición, responde todo, vuelve en la ronda 2, termina, ve su nota
 publicada y cierra sesión. Cada respuesta de la API, sea JSON o audio, y sus
 cabeceras quedan guardadas, y después se buscan en ellas:
@@ -112,6 +113,10 @@ def _rendir_completa(navegador, evaluacion) -> str:
     assert navegador.get("/api/alumno/evaluaciones").status_code == 200
     for voz in navegador.get("/api/alumno/voces").json()["voces"]:
         assert navegador.get(voz["muestra_url"]).status_code == 200
+    # Los dos avisos al docente de la pantalla de preparación (CU-08).
+    for tipo in ("NINGUNA_VOZ_SIRVE", "NECESITO_OTRA_MODALIDAD"):
+        aviso = {"evaluacion": str(evaluacion.id), "tipo": tipo}
+        assert navegador.enviar("/api/alumno/solicitudes", aviso).status_code == 201
 
     iniciar = navegador.enviar(f"/api/alumno/evaluaciones/{evaluacion.id}/iniciar", {"voz": VOZ})
     assert iniciar.status_code == 201
@@ -130,6 +135,10 @@ def _rendir_completa(navegador, evaluacion) -> str:
         if pregunta["imagen_url"]:
             assert navegador.get(pregunta["imagen_url"]).status_code == 200
         assert navegador.enviar(f"/api/alumno/respuestas/{ref}/repeticion").status_code == 204
+        eventos = {
+            "eventos": [{"tipo": "PERDIO_FOCO"}, {"tipo": "RECUPERO_FOCO", "duracion_ms": 900}]
+        }
+        assert navegador.enviar(f"{base}/eventos", eventos).status_code == 201
         assert navegador.get(f"{base}/actual").status_code == 200
 
         if paso == 0:
@@ -187,7 +196,8 @@ def test_un_recorrido_completo_en_notia_no_entrega_el_texto_ni_la_respuesta_corr
     anotadas = navegador.anotadas
     assert len(anotadas) > 40
     rutas = {ruta.split("/")[-1] for ruta, _, _ in anotadas}
-    assert {"audio", "imagen", "actual", "responder", "pasar", "voz", "repeticion"} <= rutas
+    esperadas = {"audio", "imagen", "actual", "responder", "pasar", "voz", "repeticion"}
+    assert esperadas | {"eventos", "solicitudes", "muestra", "resultados"} <= rutas
     assert all(estado < 500 for _, estado, _ in anotadas)
 
     hallazgos = [
