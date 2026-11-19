@@ -220,7 +220,8 @@ REST_FRAMEWORK = {
     # Límites de peticiones (sección 12.7). Cada vista declara el suyo; se
     # cuentan en la caché en base de datos, común a todos los workers.
     # "mfa" se cuenta por ticket y en ventanas de 300 segundos (5 cada 5 minutos).
-    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "mfa": "5/300s"},
+    # "usuario" es el límite general por persona de los endpoints de la aplicación.
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "mfa": "5/300s", "usuario": "300/min"},
     # Errores con la forma {"codigo", "mensaje"}, en español y sin trazas.
     "EXCEPTION_HANDLER": "apps.core.errores.manejador_de_excepciones",
 }
