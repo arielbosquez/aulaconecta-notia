@@ -254,6 +254,10 @@ LOGGING = {
         "django.server": {"handlers": [], "level": "INFO", "propagate": True},
         # Nunca se registran las consultas SQL: llevan datos de las personas.
         "django.db.backends": {"level": "WARNING"},
+        # Cada llamada a Azure AI Speech no necesita una línea; los fallos los
+        # registra apps/voz/azure.py, sin la llave ni el texto.
+        "httpx": {"level": "WARNING"},
+        "httpcore": {"level": "WARNING"},
     },
 }
 

@@ -13,3 +13,5 @@ segno
 cryptography
 # Pantallas (PR 1.6): Django sirve el build de Astro desde el mismo origen.
 whitenoise
+# Voz (PR 2.2): llamadas REST a Azure AI Speech con tiempo de espera.
+httpx
