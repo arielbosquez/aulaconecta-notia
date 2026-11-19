@@ -211,3 +211,51 @@ class Alternativa(models.Model):
     def __str__(self) -> str:
         return f"Alternativa {self.orden} de {self.pregunta_id}"
 
+
+
+class Modalidad(models.TextChoices):
+    # La pregunta solo se escucha.
+    NOTIA = "NOTIA", "NotIA"
+    # La pregunta se lee en pantalla, sin audio.
+    NORMAL = "NORMAL", "Normal"
+
+
+class AsignacionPrueba(models.Model):
+    """Qué alumno rinde una evaluación y en qué modalidad (CU-11).
+
+    **No tiene campo de motivo** (sección 13, Ley 21.719): por qué un alumno
+    rinde en modalidad normal puede ser un dato de salud o de discapacidad, y
+    eso lo sabe el colegio fuera del sistema. Aquí solo queda la modalidad,
+    quién la asignó y cuándo.
+    """
+
+    evaluacion = models.ForeignKey(
+        Evaluacion, on_delete=models.CASCADE, related_name="asignaciones"
+    )
+    alumno = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="asignaciones"
+    )
+    modalidad = models.CharField(max_length=6, choices=Modalidad.choices, default=Modalidad.NOTIA)
+    asignada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="asignaciones_hechas",
+    )
+    asignada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "asignación de prueba"
+        verbose_name_plural = "asignaciones de prueba"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["evaluacion", "alumno"], name="asignacion_unica_por_alumno"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(modalidad__in=Modalidad.values),
+                name="asignacion_modalidad_conocida",
+            ),
+        ]
+        indexes = [models.Index(fields=["alumno"], name="asignacion_por_alumno")]
+
+    def __str__(self) -> str:
+        return f"{self.alumno_id} · {self.evaluacion_id} · {self.modalidad}"
