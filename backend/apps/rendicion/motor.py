@@ -205,7 +205,7 @@ def presentar(intento: Intento, ahora, *, despues_de: int | None = None) -> Resp
     return siguiente
 
 
-def _respuesta_en_curso(intento: Intento, ref, ahora, *, gracia: Decimal) -> Respuesta:
+def respuesta_en_curso(intento: Intento, ref, ahora, *, gracia: Decimal) -> Respuesta:
     """La respuesta ``ref`` del intento, si sigue en curso a esta hora.
 
     Primero sincroniza con la ``gracia`` indicada: si a la pregunta se le
@@ -229,7 +229,7 @@ def responder(intento: Intento, ref, alternativa_id, ahora) -> Respuesta | None:
     por la latencia. Una respuesta dada no se cambia: la pregunta deja de
     estar en curso.
     """
-    respuesta = _respuesta_en_curso(intento, ref, ahora, gracia=tolerancia())
+    respuesta = respuesta_en_curso(intento, ref, ahora, gracia=tolerancia())
     if str(alternativa_id) not in respuesta.orden_alternativas:
         raise AlternativaInvalida()
     _cerrar_tramo(respuesta, ahora)
@@ -248,7 +248,7 @@ def pasar(intento: Intento, ref, ahora) -> Respuesta | None:
     Con la misma gracia que responder. Si al cerrar el tramo ya no le queda
     tiempo, no vuelve en la ronda 2: queda SIN_TIEMPO.
     """
-    respuesta = _respuesta_en_curso(intento, ref, ahora, gracia=tolerancia())
+    respuesta = respuesta_en_curso(intento, ref, ahora, gracia=tolerancia())
     _cerrar_tramo(respuesta, ahora)
     agotada = respuesta.segundos_usados >= respuesta.pregunta.tiempo_segundos
     respuesta.estado = EstadoRespuesta.SIN_TIEMPO if agotada else EstadoRespuesta.PASADA
@@ -258,7 +258,7 @@ def pasar(intento: Intento, ref, ahora) -> Respuesta | None:
 
 def contar_repeticion(intento: Intento, ref, ahora) -> None:
     """Suma una repetición del audio de la pregunta en curso (regla 12)."""
-    respuesta = _respuesta_en_curso(intento, ref, ahora, gracia=Decimal(0))
+    respuesta = respuesta_en_curso(intento, ref, ahora, gracia=Decimal(0))
     respuesta.repeticiones_audio += 1
     respuesta.save(update_fields=["repeticiones_audio"])
 

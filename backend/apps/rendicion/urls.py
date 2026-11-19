@@ -22,4 +22,12 @@ urlpatterns = [
         vistas.VistaRepeticion.as_view(),
         name="alumno-repeticion",
     ),
+    path(
+        "respuestas/<uuid:ref>/audio", vistas.VistaAudioDeLaPregunta.as_view(), name="alumno-audio"
+    ),
+    path(
+        "respuestas/<uuid:ref>/imagen",
+        vistas.VistaImagenDeLaPregunta.as_view(),
+        name="alumno-imagen",
+    ),
 ]

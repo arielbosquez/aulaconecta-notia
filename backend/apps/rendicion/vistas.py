@@ -5,6 +5,9 @@ intento, una respuesta o una evaluación de otra persona responden 404, igual
 que si no existieran, y el intento queda en la bitácora como acceso denegado.
 """
 
+import logging
+from decimal import Decimal
+
 from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
@@ -15,10 +18,15 @@ from rest_framework.views import APIView
 
 from apps.auditoria.models import Accion
 from apps.auditoria.servicios import registrar, registrar_acceso_denegado
+from apps.core.almacenamiento import almacenamiento_privado
+from apps.core.archivos import respuesta_privada
 from apps.core.errores import ErrorApi
 from apps.cuentas.limites import LimitePorUsuario
 from apps.cuentas.permisos import PERMISOS_DEL_ALUMNO
 from apps.evaluaciones.models import AsignacionPrueba, EstadoEvaluacion, Evaluacion, Modalidad
+from apps.voz.models import AudioPregunta
+from apps.voz.proveedores import TIPO_MP3
+from apps.voz.servicios import leer_audio
 
 from . import motor
 from .models import Intento, Respuesta
@@ -30,6 +38,10 @@ from .serializadores import (
     estado_para_alumno,
 )
 from .servicios import crear_intento
+
+registro = logging.getLogger(__name__)
+
+TIPO_IMAGEN = "image/webp"
 
 # Un alumno nunca tiene tantas pruebas; el tope evita respuestas desmedidas.
 MAXIMO_EVALUACIONES_LISTADAS = 100
@@ -288,3 +300,69 @@ class VistaRepeticion(VistaAlumno):
         consulta = Intento.objects.filter(pk=intento_id, alumno=request.user)
         motor.operar(consulta, lambda intento: motor.contar_repeticion(intento, ref, ahora))
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# --- Audio e imagen de la pregunta en curso (sección 7.2) ---------------------------
+
+
+class VistaArchivoDeLaPregunta(VistaAlumno):
+    """Base del audio y la imagen: solo de la pregunta en curso del propio alumno.
+
+    Antes de entregar nada se sincroniza el intento con la hora del servidor:
+    si a la pregunta se le acabó el tiempo, o el alumno ya la pasó o la
+    respondió, el archivo ya no se entrega. Así no se puede descargar el
+    audio de una pregunta que no se está rindiendo, ni volver a pedirlo
+    después para grabarlo con calma.
+    """
+
+    def pregunta_en_curso(self, request, ref):
+        ahora = timezone.now()
+        intento_id = (
+            Respuesta.objects.filter(pk=ref, intento__alumno=request.user)
+            .values_list("intento_id", flat=True)
+            .first()
+        )
+        if intento_id is None:
+            raise no_encontrado(request, Respuesta, ref)
+        consulta = Intento.objects.filter(pk=intento_id, alumno=request.user)
+        estado = motor.operar(
+            consulta,
+            lambda intento: motor.respuesta_en_curso(intento, ref, ahora, gracia=Decimal(0)),
+        )
+        return estado.intento, estado.respuesta
+
+
+class VistaAudioDeLaPregunta(VistaArchivoDeLaPregunta):
+    """``GET alumno/respuestas/{ref}/audio``: el MP3 con la voz del intento."""
+
+    def get(self, request, ref):
+        intento, respuesta = self.pregunta_en_curso(request, ref)
+        if intento.modalidad != Modalidad.NOTIA:
+            # La modalidad normal no tiene audio: la pregunta ya está escrita.
+            raise NotFound()
+        audio = AudioPregunta.objects.filter(
+            pregunta_id=respuesta.pregunta_id, voz=intento.voz
+        ).first()
+        if audio is None:
+            registro.warning("Falta el audio de una pregunta publicada.")
+            raise ErrorApi(
+                "audio_no_disponible",
+                "El audio de esta pregunta no está disponible. Avisa a tu profesor o profesora.",
+                estado=status.HTTP_404_NOT_FOUND,
+            )
+        return respuesta_privada(leer_audio(audio), TIPO_MP3)
+
+
+class VistaImagenDeLaPregunta(VistaArchivoDeLaPregunta):
+    """``GET alumno/respuestas/{ref}/imagen``: la imagen de la pregunta, si tiene."""
+
+    def get(self, request, ref):
+        _, respuesta = self.pregunta_en_curso(request, ref)
+        ruta = respuesta.pregunta.imagen
+        almacenamiento = almacenamiento_privado()
+        if not ruta or not almacenamiento.exists(ruta):
+            raise NotFound()
+        with almacenamiento.open(ruta, "rb") as archivo:
+            contenido = archivo.read()
+        # Las imágenes se guardan siempre reconvertidas a WebP (sección 12.4).
+        return respuesta_privada(contenido, TIPO_IMAGEN)
