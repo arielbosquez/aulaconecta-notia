@@ -28,3 +28,7 @@ AZURE_SPEECH_REGION = ""
 # django.contrib.staticfiles (las pantallas las sirve WhiteNoise desde
 # WHITENOISE_ROOT), así que basta con un prefijo que nadie usa.
 STATIC_URL = "/_estaticos_de_pruebas/"
+
+# Audios e imágenes en memoria: las pruebas no dejan archivos en el disco.
+_EN_MEMORIA = {"BACKEND": "apps.core.almacenamiento.AlmacenamientoEnMemoria"}
+STORAGES = {"default": _EN_MEMORIA, "privado": _EN_MEMORIA}

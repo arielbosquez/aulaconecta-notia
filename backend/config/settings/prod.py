@@ -9,7 +9,14 @@ from apps.core.llaves import validar_llaves
 from config.entorno import leer_opcion
 
 from .base import *  # noqa: F403
-from .base import DATABASES, JWT_SIGNING_KEY, MFA_ENCRYPTION_KEY, SECRET_KEY
+from .base import (
+    AZURE_STORAGE_ACCOUNT_NAME,
+    AZURE_STORAGE_CONTAINER,
+    DATABASES,
+    JWT_SIGNING_KEY,
+    MFA_ENCRYPTION_KEY,
+    SECRET_KEY,
+)
 
 DEBUG = False
 
@@ -30,3 +37,14 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
+
+# Audios e imágenes en el contenedor privado de Blob Storage. La aplicación
+# entra con su identidad administrada: no hay cadena de conexión ni llave.
+_ALMACENAMIENTO_AZURE = {
+    "BACKEND": "apps.core.almacenamiento_azure.AlmacenamientoAzurePrivado",
+    "OPTIONS": {
+        "account_name": AZURE_STORAGE_ACCOUNT_NAME,
+        "azure_container": AZURE_STORAGE_CONTAINER,
+    },
+}
+STORAGES = {"default": _ALMACENAMIENTO_AZURE, "privado": _ALMACENAMIENTO_AZURE}

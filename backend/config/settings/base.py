@@ -281,3 +281,13 @@ VOCES_DISPONIBLES = leer_lista(
 # --- Almacenamiento privado (Blob Storage con identidad administrada) ---
 AZURE_STORAGE_ACCOUNT_NAME = leer("AZURE_STORAGE_ACCOUNT_NAME", obligatoria=True)
 AZURE_STORAGE_CONTAINER = leer("AZURE_STORAGE_CONTAINER", obligatoria=True)
+
+# Audios e imágenes de las preguntas: nunca en static ni con URL pública
+# (ver apps/core/almacenamiento.py). En local, backend/privado/ (en
+# .gitignore); producción lo cambia por el contenedor privado de Blob Storage.
+CARPETA_PRIVADA = BASE_DIR / "privado"
+_ALMACENAMIENTO_LOCAL = {
+    "BACKEND": "apps.core.almacenamiento.AlmacenamientoLocalPrivado",
+    "OPTIONS": {"location": str(CARPETA_PRIVADA)},
+}
+STORAGES = {"default": _ALMACENAMIENTO_LOCAL, "privado": _ALMACENAMIENTO_LOCAL}

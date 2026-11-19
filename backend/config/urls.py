@@ -8,6 +8,7 @@ from django.urls import URLPattern, URLResolver, include, path
 
 urlpatterns: list[URLPattern | URLResolver] = [
     path("api/auth/", include("apps.cuentas.urls")),
+    path("api/alumno/", include("apps.voz.urls")),
 ]
 
 # Errores que Django resuelve fuera de una vista (ruta inexistente, fallo

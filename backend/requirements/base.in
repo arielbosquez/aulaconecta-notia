@@ -15,3 +15,7 @@ cryptography
 whitenoise
 # Voz (PR 2.2): llamadas REST a Azure AI Speech con tiempo de espera.
 httpx
+# Almacenamiento privado (PR 2.2): audios e imágenes en Blob Storage con
+# identidad administrada en producción; en local, una carpeta fuera de static.
+django-storages[azure]
+azure-identity

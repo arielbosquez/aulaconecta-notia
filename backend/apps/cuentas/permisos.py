@@ -27,3 +27,28 @@ class SesionCompleta(BasePermission):
             and alcance_de(request) is Alcance.COMPLETA
             and not usuario.debe_cambiar_password
         )
+
+
+class EsAlumno(BasePermission):
+    """Solo alumnos (sección 10). Se usa junto con ``SesionCompleta``.
+
+    Un docente o administrador que llama a un endpoint del alumno recibe 403
+    y queda en la bitácora (con límite de frecuencia). El administrador no
+    rinde pruebas ni ve las respuestas de los alumnos.
+    """
+
+    def has_permission(self, request, view) -> bool:
+        from apps.auditoria.servicios import registrar_acceso_denegado
+
+        from .models import Rol
+
+        usuario = request.user
+        if not (usuario and usuario.is_authenticated):
+            return False
+        if usuario.rol == Rol.ALUMNO:
+            return True
+        registrar_acceso_denegado(request, motivo="rol_no_permitido")
+        return False
+
+
+PERMISOS_DEL_ALUMNO = [SesionCompleta, EsAlumno]
