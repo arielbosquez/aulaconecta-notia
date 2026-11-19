@@ -7,10 +7,13 @@ crean lo mínimo y aceptan campos para variar cada caso.
 from datetime import timedelta
 from itertools import count
 
+from django.conf import settings
 from django.utils import timezone
 
 from apps.academico.models import Curso, CursoDocente, Matricula
 from apps.cuentas.models import Rol, Usuario
+from apps.cuentas.tests.conftest import Navegador
+from apps.cuentas.tokens import Alcance, emitir_tokens
 from apps.evaluaciones.models import (
     Alternativa,
     AsignacionPrueba,
@@ -37,10 +40,15 @@ def crear_usuario(rol: str = Rol.ALUMNO, **campos) -> Usuario:
 
 
 def crear_admin(**campos) -> Usuario:
+    campos.setdefault("mfa_habilitado", True)
+    campos.setdefault("debe_cambiar_password", False)
     return crear_usuario(Rol.ADMIN, **campos)
 
 
 def crear_docente(**campos) -> Usuario:
+    """Docente con el 2FA activado, para que pueda tener una sesión completa."""
+    campos.setdefault("mfa_habilitado", True)
+    campos.setdefault("debe_cambiar_password", False)
     return crear_usuario(Rol.DOCENTE, **campos)
 
 
@@ -116,3 +124,17 @@ def asignar(
         modalidad=modalidad,
         asignada_por=evaluacion.creada_por,
     )
+
+
+def sesion_de(usuario: Usuario) -> Navegador:
+    """Navegador con una sesión completa del usuario y su token CSRF.
+
+    Se comporta como el frontend: envía las cookies y la cabecera
+    ``X-CSRFToken`` en los métodos que modifican datos.
+    """
+    navegador = Navegador()
+    tokens = emitir_tokens(usuario, Alcance.COMPLETA)
+    navegador.cookies[settings.COOKIE_ACCESO] = tokens.acceso
+    navegador.cookies[settings.COOKIE_REFRESCO] = tokens.refresco
+    navegador.pedir_csrf()
+    return navegador
