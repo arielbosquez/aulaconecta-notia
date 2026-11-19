@@ -1,18 +1,31 @@
-"""Eventos de integridad del alumno: ``POST /api/alumno/intentos/{id}/eventos``."""
+"""Eventos de integridad y avisos del alumno (CU-05 y CU-08).
+
+- ``POST /api/alumno/intentos/{id}/eventos``
+- ``POST /api/alumno/solicitudes``
+"""
 
 from datetime import timedelta
 
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.response import Response
 
 from apps.core.errores import ErrorApi
 from apps.core.serializadores import SerializadorEstricto
+from apps.evaluaciones.models import AsignacionPrueba, Evaluacion
 from apps.rendicion import motor
 from apps.rendicion.models import Intento
-from apps.rendicion.vistas import VistaAlumno, no_encontrado
+from apps.rendicion.vistas import ESTADOS_VISIBLES, VistaAlumno, no_encontrado
 
-from .models import DURACION_MAXIMA_MS, EventoIntegridad, TipoEvento
+from .models import (
+    DURACION_MAXIMA_MS,
+    EstadoSolicitud,
+    EventoIntegridad,
+    SolicitudAlumno,
+    TipoEvento,
+    TipoSolicitud,
+)
 
 # Sección 11: hasta 20 eventos por envío y 60 por minuto por intento.
 EVENTOS_POR_ENVIO = 20
@@ -89,3 +102,62 @@ class VistaEventos(VistaAlumno):
         if motor.operar(consulta, registrar) is None:
             raise no_encontrado(request, Intento, intento_id)
         return Response({"registrados": len(eventos)}, status=status.HTTP_201_CREATED)
+
+
+# --- Avisos al docente (CU-08) -------------------------------------------------------------
+
+
+class SerializadorSolicitud(SerializadorEstricto):
+    # Sin campo de texto: un campo de más (como "mensaje") se rechaza completo.
+    evaluacion = serializers.UUIDField()
+    tipo = serializers.ChoiceField(choices=TipoSolicitud.choices)
+
+
+def _solicitud_para_alumno(solicitud: SolicitudAlumno) -> dict:
+    return {
+        "id": str(solicitud.id),
+        "evaluacion": str(solicitud.evaluacion_id),
+        "tipo": solicitud.tipo,
+        "estado": solicitud.estado,
+        "creada_en": solicitud.creada_en,
+    }
+
+
+class VistaSolicitudes(VistaAlumno):
+    """``POST alumno/solicitudes``: "Ninguna voz me acomoda" o "Necesito otra modalidad".
+
+    Solo para una prueba asignada al alumno. Repetir un aviso que sigue
+    pendiente devuelve el mismo (200) en vez de crear otro.
+    """
+
+    def post(self, request):
+        datos = SerializadorSolicitud(data=request.data)
+        datos.is_valid(raise_exception=True)
+        evaluacion_id, tipo = datos.validated_data["evaluacion"], datos.validated_data["tipo"]
+
+        asignada = AsignacionPrueba.objects.filter(
+            evaluacion_id=evaluacion_id,
+            alumno=request.user,
+            evaluacion__estado__in=ESTADOS_VISIBLES,
+        ).exists()
+        if not asignada:
+            raise no_encontrado(request, Evaluacion, evaluacion_id)
+
+        pendientes = SolicitudAlumno.objects.filter(
+            alumno=request.user,
+            evaluacion_id=evaluacion_id,
+            tipo=tipo,
+            estado=EstadoSolicitud.PENDIENTE,
+        )
+        existente = pendientes.first()
+        if existente is not None:
+            return Response(_solicitud_para_alumno(existente))
+        try:
+            with transaction.atomic():
+                solicitud = SolicitudAlumno.objects.create(
+                    alumno=request.user, evaluacion_id=evaluacion_id, tipo=tipo
+                )
+        except IntegrityError:
+            # Otra petición igual llegó primero: vale la suya.
+            return Response(_solicitud_para_alumno(pendientes.get()))
+        return Response(_solicitud_para_alumno(solicitud), status=status.HTTP_201_CREATED)
